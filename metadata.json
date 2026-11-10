@@ -1,0 +1,6 @@
+{
+  "name": "ScriptCare AI - Clinical Pharmacy & Patient Care Companion",
+  "description": "Seamless clinical pharmacy platform translating consultation transcripts into personalized patient schedules, interactive AI medication Q&A grounded in pharmacist notes, real-time drug database lookups with FDA schedules, food interaction warnings, push dosage reminders, and immediate emergency triage for nausea and distress.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
