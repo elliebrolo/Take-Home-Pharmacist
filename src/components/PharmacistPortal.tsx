@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { FileText, Sparkles, CheckCircle2, AlertTriangle, RefreshCw, Plus, Trash2, ArrowRight, ShieldAlert, Pill, Eye } from 'lucide-react';
-import { ConsultationRecord, MedicationScheduleItem, DietaryWarning, TimeOfDay, FoodRequirement } from '../types/pharmacy';
+import { ConsultationRecord, MedicationScheduleItem, DietaryWarning, TimeOfDay, FoodRequirement, VerifiedMedicationPhoto } from '../types/pharmacy';
 import { DEFAULT_CONSULTATIONS } from '../data/defaultConsultations';
 import { PictorialWarningLabel, detectMedicationPictorials, detectFoodQueryPictorial } from './PictorialWarningLabel';
+import { MedicationPhotoVerifier } from './MedicationPhotoVerifier';
+import { DrugCatalogSearch } from './DrugCatalogSearch';
 
 interface PharmacistPortalProps {
   currentConsultation: ConsultationRecord;
@@ -139,10 +141,33 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
     setMedications(medications.filter((m) => m.id !== id));
   };
 
+  // A photo confirmation only holds for the exact product it was checked against.
+  // If any of these change (e.g. a refill from another manufacturer has a new NDC),
+  // drop the confirmation so patients fall back to the placeholder.
+  const PHOTO_INVALIDATING_FIELDS: Array<keyof MedicationScheduleItem> = [
+    'ndc',
+    'medicationName',
+    'genericName',
+    'strength',
+    'dosageForm',
+  ];
+
   const handleUpdateMed = (id: string, field: keyof MedicationScheduleItem, value: any) => {
     setMedications(
-      medications.map((m) => (m.id === id ? { ...m, [field]: value } : m))
+      medications.map((m) => {
+        if (m.id !== id) return m;
+        const invalidatesPhoto = PHOTO_INVALIDATING_FIELDS.includes(field) && m[field] !== value;
+        return { ...m, [field]: value, ...(invalidatesPhoto ? { photo: undefined } : {}) };
+      })
     );
+  };
+
+  const handleConfirmPhoto = (id: string, photo: VerifiedMedicationPhoto) => {
+    setMedications(medications.map((m) => (m.id === id ? { ...m, photo } : m)));
+  };
+
+  const handleRemovePhoto = (id: string) => {
+    setMedications(medications.map((m) => (m.id === id ? { ...m, photo: undefined } : m)));
   };
 
   return (
@@ -447,6 +472,15 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
                 </span>
               </div>
 
+              {/* Verified photo for the patient schedule */}
+              <MedicationPhotoVerifier
+                medication={med}
+                pharmacistName={currentConsultation.pharmacistName}
+                onNdcChange={(ndc) => handleUpdateMed(med.id, 'ndc', ndc)}
+                onConfirmPhoto={(photo) => handleConfirmPhoto(med.id, photo)}
+                onRemovePhoto={() => handleRemovePhoto(med.id)}
+              />
+
               {/* Auxiliary Pictorial Warning Preview */}
               {detectMedicationPictorials(med.foodInstructions, med.warnings, med.withFood, med.medicationName).length > 0 && (
                 <div className="pt-2.5 border-t border-slate-200/50 dark:border-slate-800/50 flex flex-wrap items-center gap-2">
@@ -500,6 +534,16 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
             ))}
           </div>
         </div>
+
+        {/* Drug reference (moved here from the patient app) */}
+        <details className="pt-4 border-t border-slate-200 dark:border-slate-800">
+          <summary className="text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
+            Drug reference: schedules, boxed warnings and dosing
+          </summary>
+          <div className="mt-4">
+            <DrugCatalogSearch />
+          </div>
+        </details>
 
         {/* Publish Action Footer */}
         <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">

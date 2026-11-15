@@ -227,30 +227,30 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
     switch (severity?.toLowerCase()) {
       case 'severe':
         return (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 text-xs font-bold rounded-md">
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 text-sm font-bold rounded-md">
             <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-            Severe Contraindication
+            Do not combine
           </span>
         );
       case 'moderate':
         return (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-xs font-bold rounded-md">
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-sm font-bold rounded-md">
             <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-            Moderate Interaction
+            Be careful
           </span>
         );
       case 'advisory':
         return (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 text-xs font-bold rounded-md">
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 text-sm font-bold rounded-md">
             <Info className="w-3.5 h-3.5 text-blue-600" />
-            Timing Advisory
+            Timing tip
           </span>
         );
       default:
         return (
-          <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold rounded-md">
+          <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 text-sm font-bold rounded-md">
             <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
-            Safe to Consume
+            No known problem
           </span>
         );
     }
@@ -266,18 +266,18 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
           </div>
           <div>
             <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              Dietary & Food-Drug Interaction Safety Center
+              Food check
             </h2>
             <p className="text-sm text-slate-500">
-              Certain foods, juices, and dairy can alter pill absorption or trigger toxic spikes. Check any food against your current prescriptions.
+              Some foods and drinks do not mix with some medicines. Type a food or drink to check it against your medicines.
             </p>
           </div>
         </div>
 
         {/* Live Food Checker Input */}
         <div className="mt-6">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-            Ask Pharmacist: Is this food or drink safe with my pills?
+          <label className="block text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
+            Is this food or drink OK with my medicines?
           </label>
           <div className="flex gap-2">
             <div className="relative flex-1">
@@ -287,7 +287,8 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
                 value={searchFood}
                 onChange={(e) => setSearchFood(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCheckFood(searchFood)}
-                placeholder="Type any food or drink (e.g. Grapefruit, Milk, Spinach, Bananas, Beer, Coffee, Apples)..."
+                aria-label="Food or drink to check"
+                placeholder="Type a food or drink, like milk or coffee"
                 className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500 text-slate-900 dark:text-slate-100 placeholder-slate-400"
               />
             </div>
@@ -299,17 +300,17 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
               {isLoading ? (
                 <>
                   <RefreshCw className="w-4 h-4 animate-spin" />
-                  Analyzing...
+                  Checking…
                 </>
               ) : (
-                'Check Safety'
+                'Check'
               )}
             </button>
           </div>
 
           {/* Quick Click Badges */}
-          <div className="mt-3 flex flex-wrap gap-2 items-center text-xs">
-            <span className="text-slate-400 font-medium">Quick checks:</span>
+          <div className="mt-3 flex flex-wrap gap-2 items-center text-sm">
+            <span className="text-slate-400 font-medium">Try:</span>
             {quickFoods.map((food, idx) => (
               <button
                 key={idx}
@@ -361,11 +362,11 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
                   ✓
                 </div>
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                    Verified Safe Dietary Choice
+                  <div className="text-sm font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                    No problem found
                   </div>
-                  <div className="text-xs text-slate-600 dark:text-slate-300">
-                    No pharmacological chelation, enzyme blockage, or absorption interference with your active medications.
+                  <div className="text-sm text-slate-600 dark:text-slate-300">
+                    We did not find a problem with your medicines. If you are unsure, ask your pharmacist.
                   </div>
                 </div>
               </div>
@@ -376,9 +377,9 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
             </p>
 
             {result.affectedMedications?.length > 0 && (
-              <div className="mb-3 text-xs">
+              <div className="mb-3 text-sm">
                 <span className="font-semibold text-slate-800 dark:text-slate-200">
-                  Impacted Prescription(s):{' '}
+                  Affects:{' '}
                 </span>
                 <span className="text-slate-600 dark:text-slate-300 font-medium">
                   {result.affectedMedications.join(', ')}
@@ -386,23 +387,23 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
               </div>
             )}
 
-            <div className="p-3 bg-white/70 dark:bg-slate-900/60 rounded-lg text-xs space-y-1.5 border border-slate-200/50 dark:border-slate-800/50">
+            <div className="p-3 bg-white/70 dark:bg-slate-900/60 rounded-lg text-sm space-y-1.5 border border-slate-200/50 dark:border-slate-800/50">
               <div>
-                <strong className="text-slate-900 dark:text-slate-100">Pharmacist Recommendation: </strong>
+                <strong className="text-slate-900 dark:text-slate-100">What to do: </strong>
                 <span className="text-slate-700 dark:text-slate-300">{result.recommendation}</span>
               </div>
               {result.details && (
-                <div className="text-slate-500 dark:text-slate-400">
-                  <strong className="text-slate-700 dark:text-slate-300">Clinical Mechanism: </strong>
-                  {result.details}
-                </div>
+                <details>
+                  <summary className="font-semibold text-teal-800 dark:text-teal-300 cursor-pointer min-h-8">Why?</summary>
+                  <div className="text-slate-600 dark:text-slate-300 mt-1">{result.details}</div>
+                </details>
               )}
             </div>
           </div>
         )}
 
         {error && (
-          <div className="mt-4 p-3 bg-rose-50 text-rose-700 rounded-lg text-xs font-medium">
+          <div className="mt-4 p-3 bg-rose-50 text-rose-700 rounded-lg text-sm font-medium">
             {error}
           </div>
         )}
@@ -412,19 +413,16 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
       <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm">
         <div className="flex items-center justify-between gap-2 mb-1">
           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            Pharmacist Verified Dietary Warnings for Your Regimen
+            Foods and drinks your pharmacist told you about
           </h3>
-          <span className="text-xs font-semibold px-2 py-0.5 bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 rounded">
-            Pictorial Signs Active
-          </span>
         </div>
-        <p className="text-xs text-slate-500 mb-4">
-          Directly transcribed from your consultation with Dr. Sarah Jenkins, PharmD. Each warning features an auxiliary visual prohibition symbol.
+        <p className="text-sm text-slate-500 mb-4">
+          These come from your visit with your pharmacist.
         </p>
 
         {knownWarnings.length === 0 ? (
           <div className="p-6 text-center text-sm text-slate-500 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
-            No specific dietary contraindications were flagged in this consultation. Always take pills with water unless instructed otherwise.
+            Your pharmacist did not flag any foods or drinks. Take your pills with water unless you were told otherwise.
           </div>
         ) : (
           <div className="space-y-4">
@@ -440,7 +438,7 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
                       <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
                         {warning.foodOrDrink}
                       </span>
-                      <span className="text-xs text-slate-500">
+                      <span className="text-sm text-slate-500">
                         · Affects: {warning.interactsWith.join(', ')}
                       </span>
                     </div>
@@ -456,13 +454,13 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
                     />
                   </div>
 
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-2">
+                  <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-2">
                     {warning.explanation}
                   </p>
 
                   {warning.safeAlternative && (
-                    <div className="text-xs text-teal-800 dark:text-teal-300 font-medium">
-                      ✓ Safe Alternative: {warning.safeAlternative}
+                    <div className="text-sm text-teal-800 dark:text-teal-300 font-medium">
+                      ✓ Instead: {warning.safeAlternative}
                     </div>
                   )}
                 </div>
@@ -477,11 +475,11 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
         <div className="flex items-center gap-2 mb-2">
           <HelpCircle className="w-5 h-5 text-teal-600" />
           <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            Universal Pharmacy Auxiliary Warning Symbols Guide
+            What the signs mean
           </h3>
         </div>
-        <p className="text-xs text-slate-500 mb-4">
-          Standardized visual symbols placed on prescription labels. Red circular borders with a diagonal strike-through line mean <strong>STRICT PROHIBITION (DO NOT CONSUME)</strong>.
+        <p className="text-sm text-slate-500 mb-4">
+          A red circle with a line through it means <strong>do not have this</strong>.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

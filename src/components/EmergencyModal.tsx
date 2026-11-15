@@ -79,7 +79,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
                 )}
               </div>
               <div>
-                <span className="text-xs font-bold uppercase tracking-wider opacity-90">
+                <span className="text-sm font-bold uppercase tracking-wider opacity-90">
                   {is911 ? 'Critical Emergency Alert' : 'Urgent Care & Clinical Safety Triage'}
                 </span>
                 <h2 className="text-2xl font-bold tracking-tight">
@@ -118,7 +118,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
                   <div className="text-sm font-bold text-rose-900 dark:text-rose-100">
                     Call 911 Emergency
                   </div>
-                  <div className="text-xs text-rose-600 dark:text-rose-400">
+                  <div className="text-sm text-rose-600 dark:text-rose-400">
                     Immediate first responders
                   </div>
                 </div>
@@ -131,14 +131,14 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
               className="flex items-center justify-between p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-950/60 transition-colors group"
             >
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold text-xs">
+                <div className="w-10 h-10 rounded-lg bg-amber-600 text-white flex items-center justify-center font-bold text-sm">
                   POISON
                 </div>
                 <div>
                   <div className="text-sm font-bold text-amber-900 dark:text-amber-100">
                     Poison Control Center
                   </div>
-                  <div className="text-xs text-amber-700 dark:text-amber-400 font-mono">
+                  <div className="text-sm text-amber-700 dark:text-amber-400 font-mono">
                     1-800-222-1222
                   </div>
                 </div>
@@ -155,7 +155,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
                 Immediate Steps If You Feel Too Sick or Nauseous:
               </h3>
             </div>
-            <ul className="text-xs space-y-1.5 text-slate-600 dark:text-slate-300 list-disc list-inside">
+            <ul className="text-sm space-y-1.5 text-slate-600 dark:text-slate-300 list-disc list-inside">
               <li>
                 <strong className="text-slate-800 dark:text-slate-200">Check Meal Timing:</strong> Medications like Metformin, Metoprolol, or Augmentin cause nausea when taken on an empty stomach. Take with food or a snack.
               </li>
@@ -177,7 +177,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
               <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
                 Nearby Walk-In Urgent Care & Emergency Clinics
               </h3>
-              <span className="text-xs text-slate-500">Live Availability</span>
+              <span className="text-sm text-slate-500">Live Availability</span>
             </div>
 
             <div className="space-y-3">
@@ -193,12 +193,12 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
                           {clinic.name}
                         </span>
                         {clinic.isOpen247 && (
-                          <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded">
+                          <span className="px-2 py-0.5 text-sm font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded">
                             Open 24/7
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
+                      <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
                         <span className="flex items-center gap-1">
                           <MapPin className="w-3.5 h-3.5" />
                           {clinic.distance} · {clinic.address}
@@ -212,7 +212,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
 
                     <a
                       href={`tel:${clinic.phone.replace(/[^0-9]/g, '')}`}
-                      className="px-3 py-1.5 text-xs font-semibold text-white bg-slate-900 dark:bg-teal-600 rounded-lg hover:bg-slate-800 dark:hover:bg-teal-500 transition-colors flex items-center gap-1 shrink-0"
+                      className="px-3 py-1.5 text-sm font-semibold text-white bg-slate-900 dark:bg-teal-600 rounded-lg hover:bg-slate-800 dark:hover:bg-teal-500 transition-colors flex items-center gap-1 shrink-0"
                     >
                       <Phone className="w-3.5 h-3.5" />
                       Call Clinic
@@ -228,7 +228,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">
               Direct Clinical Hotlines
             </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
               {defaultHotlines.map((hotline, idx) => (
                 <div
                   key={idx}
@@ -238,7 +238,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
                     <div className="font-medium text-slate-900 dark:text-slate-100">
                       {hotline.name}
                     </div>
-                    <div className="text-[11px] text-slate-500">{hotline.badge}</div>
+                    <div className="text-sm text-slate-500">{hotline.badge}</div>
                   </div>
                   <a
                     href={`tel:${hotline.phone.replace(/[^0-9]/g, '')}`}
@@ -254,12 +254,12 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
 
         {/* Footer Actions */}
         <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <span className="text-xs text-slate-500">
+          <span className="text-sm text-slate-500">
             ScriptCare Clinical Triage · Dedicated to {patientName}
           </span>
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
+            className="px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-600 transition-colors"
           >
             Close Emergency Panel
           </button>

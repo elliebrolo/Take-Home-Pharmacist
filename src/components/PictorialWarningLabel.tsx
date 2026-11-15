@@ -523,6 +523,8 @@ export const PictorialWarningLabel: React.FC<PictorialWarningLabelProps> = ({
 
   return (
     <div
+      // Icon-only labels have no visible text, so give them a text alternative.
+      {...(showLabelText ? {} : { role: 'img', 'aria-label': `${title}. ${subtitle}`, title: `${title}. ${subtitle}` })}
       className={`inline-flex items-center gap-3 p-2.5 rounded-xl border shadow-sm transition-all ${stickerStyles} ${className}`}
     >
       {/* Pictorial Sign (Prohibition with diagonal slash or Positive circle) */}
@@ -547,10 +549,10 @@ export const PictorialWarningLabel: React.FC<PictorialWarningLabelProps> = ({
             <span
               className={`font-black tracking-tight uppercase leading-tight ${
                 size === 'sm'
-                  ? 'text-[11px]'
-                  : size === 'lg'
                   ? 'text-sm'
-                  : 'text-xs'
+                  : size === 'lg'
+                  ? 'text-base'
+                  : 'text-sm'
               } ${
                 isProhibition
                   ? 'text-rose-700 dark:text-rose-400'
@@ -563,7 +565,7 @@ export const PictorialWarningLabel: React.FC<PictorialWarningLabelProps> = ({
             </span>
           </div>
           {size !== 'sm' && (
-            <p className="text-[11px] text-slate-600 dark:text-slate-300 font-medium leading-snug mt-0.5 line-clamp-2">
+            <p className="text-sm text-slate-600 dark:text-slate-300 font-medium leading-snug mt-0.5">
               {subtitle}
             </p>
           )}

@@ -4,8 +4,30 @@ export type FoodRequirement = 'with_food' | 'empty_stomach' | 'with_or_without_f
 
 export type UrgencyLevel = 'emergency_911' | 'urgent_care' | 'clinical_call' | 'mild_monitoring';
 
+/**
+ * A photograph of the dispensed product, taken from its FDA label on DailyMed
+ * and confirmed by a pharmacist. It is only ever shown to patients when every
+ * field is present and `ndc` still matches the medication's current NDC
+ * (see `getVerifiedPhoto`).
+ */
+export interface VerifiedMedicationPhoto {
+  ndc: string; // NDC the photo was confirmed against
+  imageUrl: string; // DailyMed-hosted image
+  sourceUrl: string; // DailyMed label page, for attribution
+  setId: string; // SPL set id of the label
+  labelTitle: string;
+  labelVersion: string;
+  retrievedAt: string; // ISO date
+  confirmedBy: string; // pharmacist who confirmed the match
+  confirmedAt: string; // ISO date
+}
+
 export interface MedicationScheduleItem {
   id: string;
+  /** National Drug Code of the dispensed bottle, entered by the pharmacist. */
+  ndc?: string;
+  /** Present only after a pharmacist has confirmed the photo matches the dispensed product. */
+  photo?: VerifiedMedicationPhoto;
   medicationName: string;
   genericName: string;
   brandName?: string;
@@ -103,6 +125,26 @@ export interface ChatMessage {
   isEmergencyAlert?: boolean;
   triageData?: EmergencyTriageResult;
   groundedInNotes?: string[];
+}
+
+/**
+ * A candidate image found on a DailyMed label. Never shown to patients until a
+ * pharmacist confirms it. One label can cover several strengths and also
+ * contains carton art and chemical structures, so the match must be checked by eye.
+ */
+export interface PhotoCandidate {
+  name: string;
+  imageUrl: string;
+}
+
+export interface PhotoLookupResult {
+  ndc: string;
+  setId: string;
+  labelTitle: string;
+  labelVersion: string;
+  sourceUrl: string;
+  retrievedAt: string;
+  candidates: PhotoCandidate[];
 }
 
 export interface DrugCatalogItem {

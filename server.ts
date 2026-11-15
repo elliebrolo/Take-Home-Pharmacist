@@ -1720,6 +1720,89 @@ app.post('/api/emergency-triage', (req, res) => {
   return res.json({ success: true, triage: result });
 });
 
+// 6. API: Candidate medication photos from the FDA label on DailyMed (by NDC).
+//
+// This only FINDS candidates. It never decides which image shows the dispensed
+// product: DailyMed media files are generically named (image-01.jpg ...) and one
+// label can cover several strengths plus carton art and chemical structures. A
+// pharmacist must pick and confirm an image in the Pharmacist Workspace before a
+// patient ever sees it.
+const DAILYMED_API = 'https://dailymed.nlm.nih.gov/dailymed/services/v2';
+const DAILYMED_HOST = 'dailymed.nlm.nih.gov';
+const NDC_PATTERN = /^\d{4,5}-\d{3,4}(-\d{1,2})?$/; // 4-4-2, 5-3-2, 5-4-1 or the 2-segment product code
+const PHOTO_LOOKUP_TTL_MS = 6 * 60 * 60 * 1000;
+const photoLookupCache = new Map<string, { at: number; results: any[] }>();
+
+async function fetchDailyMedJson(url: string) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const resp = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/json' } });
+    if (!resp.ok) throw new Error(`DailyMed responded with HTTP ${resp.status}`);
+    return await resp.json();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function isDailyMedImageUrl(raw: unknown): raw is string {
+  try {
+    const u = new URL(String(raw));
+    return u.protocol === 'https:' && u.hostname === DAILYMED_HOST;
+  } catch {
+    return false;
+  }
+}
+
+app.get('/api/medication-photo', async (req, res) => {
+  const ndc = String(req.query.ndc || '').trim();
+  if (!NDC_PATTERN.test(ndc)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Enter the NDC with dashes, e.g. 58151-157-77 (or the 2-part product code 58151-157).',
+    });
+  }
+
+  const cached = photoLookupCache.get(ndc);
+  if (cached && Date.now() - cached.at < PHOTO_LOOKUP_TTL_MS) {
+    return res.json({ success: true, ndc, results: cached.results });
+  }
+
+  try {
+    const spls = await fetchDailyMedJson(`${DAILYMED_API}/spls.json?ndc=${encodeURIComponent(ndc)}&pagesize=3`);
+    const labels: any[] = Array.isArray(spls?.data) ? spls.data.slice(0, 3) : [];
+    const retrievedAt = new Date().toISOString();
+
+    const results = await Promise.all(
+      labels.map(async (label) => {
+        const media = await fetchDailyMedJson(`${DAILYMED_API}/spls/${encodeURIComponent(label.setid)}/media.json`);
+        const candidates = (Array.isArray(media?.data?.media) ? media.data.media : [])
+          .filter((m: any) => typeof m?.mime_type === 'string' && m.mime_type.startsWith('image/') && isDailyMedImageUrl(m.url))
+          .map((m: any) => ({ name: String(m.name || 'image'), imageUrl: m.url as string }));
+
+        return {
+          ndc,
+          setId: String(label.setid),
+          labelTitle: String(label.title || ''),
+          labelVersion: `v${label.spl_version} (published ${label.published_date})`,
+          sourceUrl: `https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=${encodeURIComponent(label.setid)}`,
+          retrievedAt,
+          candidates,
+        };
+      })
+    );
+
+    photoLookupCache.set(ndc, { at: Date.now(), results });
+    return res.json({ success: true, ndc, results });
+  } catch (error: any) {
+    console.warn('DailyMed photo lookup failed:', error?.message);
+    return res.status(502).json({
+      success: false,
+      error: 'Could not reach DailyMed. No photo will be shown to the patient. Try again shortly.',
+    });
+  }
+});
+
 // Set up Vite development middleware or serve static files in production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

@@ -41,7 +41,6 @@ export default function App() {
           <PatientPortal
             consultation={consultation}
             onOpenEmergencyModal={handleOpenEmergencyModal}
-            onSwitchToPharmacistView={() => setCurrentView('pharmacist')}
           />
         ) : (
           <PharmacistPortal
