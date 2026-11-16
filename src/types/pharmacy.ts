@@ -5,28 +5,57 @@ export type FoodRequirement = 'with_food' | 'empty_stomach' | 'with_or_without_f
 export type UrgencyLevel = 'emergency_911' | 'urgent_care' | 'clinical_call' | 'mild_monitoring';
 
 /**
- * A photograph of the dispensed product, taken from its FDA label on DailyMed
- * and confirmed by a pharmacist. It is only ever shown to patients when every
- * field is present and `ndc` still matches the medication's current NDC
- * (see `getVerifiedPhoto`).
+ * Where a patient-facing medication image came from. Listed in order of preference.
+ *  - pharmacist_photo : the pharmacist photographed the dispensed pill.
+ *  - nlm_rximage      : US reference photo (NLM RxImage). Same drug and strength, but a
+ *                       US manufacturer, so the pill may look different from the Canadian one.
+ *  - dailymed_label   : package/label image from the FDA label on DailyMed (not a pill photo).
+ */
+export type PhotoSource = 'pharmacist_photo' | 'nlm_rximage' | 'dailymed_label';
+
+/**
+ * A medication image confirmed by a pharmacist. It is only ever shown to patients
+ * when every field is present and `boundTo` still matches the medication's
+ * current identity (see `getVerifiedPhoto`).
  */
 export interface VerifiedMedicationPhoto {
-  ndc: string; // NDC the photo was confirmed against
-  imageUrl: string; // DailyMed-hosted image
-  sourceUrl: string; // DailyMed label page, for attribution
-  setId: string; // SPL set id of the label
-  labelTitle: string;
-  labelVersion: string;
-  retrievedAt: string; // ISO date
+  source: PhotoSource;
+  /** Fingerprint of the product (NDC, DIN, name, strength, form) this photo was confirmed against. */
+  boundTo: string;
+  /** Same-origin path (/uploads/..., /nlm-images/...) or a DailyMed image URL. */
+  imageUrl: string;
+  /** Link to the source record (DailyMed label), when there is one. */
+  sourceUrl?: string;
+  /** Provenance line shown to the patient, e.g. "Courtesy of the U.S. National Library of Medicine". */
+  attribution: string;
+  /** Source-specific facts for the record and caption. */
+  details?: {
+    labeler?: string;
+    imprint?: string;
+    ndc?: string;
+    labelTitle?: string;
+    labelVersion?: string;
+    setId?: string;
+  };
+  retrievedAt?: string; // ISO date, for sources fetched from an external service
   confirmedBy: string; // pharmacist who confirmed the match
   confirmedAt: string; // ISO date
+  /** True for pre-attached sample images that no pharmacist has verified (demo data only). */
+  demo?: boolean;
 }
 
 export interface MedicationScheduleItem {
   id: string;
-  /** National Drug Code of the dispensed bottle, entered by the pharmacist. */
+  /** Health Canada Drug Identification Number of the dispensed product, entered by the pharmacist. */
+  din?: string;
+  /** National Drug Code of the dispensed bottle (US products), entered by the pharmacist. */
   ndc?: string;
-  /** Present only after a pharmacist has confirmed the photo matches the dispensed product. */
+  /**
+   * Plain-language description typed by the pharmacist (e.g. "white, oval, marked PD 157").
+   * Shown as text when there is no photo; never used to draw an image.
+   */
+  appearance?: string;
+  /** Present only after a pharmacist has confirmed the image matches the dispensed product. */
   photo?: VerifiedMedicationPhoto;
   medicationName: string;
   genericName: string;
@@ -138,13 +167,36 @@ export interface PhotoCandidate {
 }
 
 export interface PhotoLookupResult {
-  ndc: string;
+  ndc: string; // the NDC form that matched on DailyMed
   setId: string;
   labelTitle: string;
   labelVersion: string;
   sourceUrl: string;
   retrievedAt: string;
   candidates: PhotoCandidate[];
+}
+
+/** A US reference pill photo from NLM's RxImage set. */
+export interface NlmCandidate {
+  imageUrl: string;
+  name: string;
+  ndc: string;
+  rxcui: string;
+  labeler: string;
+  imprint: string;
+  shape: string;
+  color: string;
+  sizeMm: number | null;
+}
+
+/** Health Canada Drug Product Database record for a DIN. */
+export interface DpdProduct {
+  din: string;
+  brandName: string;
+  company: string;
+  ingredients: Array<{ name: string; strength: string }>;
+  form: string;
+  status: string;
 }
 
 export interface DrugCatalogItem {

@@ -1,4 +1,4 @@
-import React, { useId, useState } from 'react';
+import React, { useEffect, useId, useState } from 'react';
 import { AlertTriangle, Check, ChevronDown, Clock, Utensils } from 'lucide-react';
 import { FoodRequirement, MedicationScheduleItem } from '../types/pharmacy';
 import { PictorialWarningLabel, detectMedicationPictorials } from './PictorialWarningLabel';
@@ -26,6 +26,9 @@ export const MedicationCard: React.FC<MedicationCardProps> = ({
   pharmacistName,
 }) => {
   const [expanded, setExpanded] = useState(false);
+  // If the image file cannot be loaded, show the placeholder (and its caption) rather than a broken image.
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => setImageFailed(false), [med.photo?.imageUrl]);
   const detailsId = useId();
 
   const pictorials = detectMedicationPictorials(med.foodInstructions, med.warnings, med.withFood, med.medicationName);
@@ -44,7 +47,7 @@ export const MedicationCard: React.FC<MedicationCardProps> = ({
     >
       {/* Collapsed summary: everything needed to take this dose */}
       <div className="p-4 flex items-start gap-3">
-        <MedicationImage medication={med} />
+        <MedicationImage medication={med} failed={imageFailed} onError={() => setImageFailed(true)} />
 
         <div className="flex-1 min-w-0">
           <h4 className="font-bold text-base text-slate-900 dark:text-slate-100 leading-snug">{fullName}</h4>
@@ -104,9 +107,9 @@ export const MedicationCard: React.FC<MedicationCardProps> = ({
       {/* Expanded details */}
       <div id={detailsId} hidden={!expanded} className="px-4 pb-4 pt-3 space-y-4 border-t border-slate-200 dark:border-slate-700">
         <div className="flex flex-col sm:flex-row gap-4">
-          <MedicationImage medication={med} size="lg" />
+          <MedicationImage medication={med} size="lg" failed={imageFailed} onError={() => setImageFailed(true)} />
           <div className="space-y-2 min-w-0">
-            <MedicationImageCaption medication={med} />
+            <MedicationImageCaption medication={med} failed={imageFailed} />
             <p className="text-sm text-slate-600 dark:text-slate-300">
               <span className="font-semibold text-slate-800 dark:text-slate-100">Form: </span>
               {med.dosageForm}

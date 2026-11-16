@@ -1,6 +1,7 @@
 import { ConsultationRecord } from '../types/pharmacy';
+import { withDemoPhoto } from './demoPhotos';
 
-export const DEFAULT_CONSULTATIONS: ConsultationRecord[] = [
+const BASE_CONSULTATIONS: ConsultationRecord[] = [
   {
     id: 'consult-chen-01',
     patientId: 'PT-8821',
@@ -410,3 +411,9 @@ DAVID: Understood. First bite of breakfast and dinner, space yogurt out by 2 hou
     ],
   },
 ];
+
+// Sample patients ship with demo reference photos (clearly flagged; see demoPhotos.ts).
+export const DEFAULT_CONSULTATIONS: ConsultationRecord[] = BASE_CONSULTATIONS.map((c) => ({
+  ...c,
+  medications: c.medications.map(withDemoPhoto),
+}));

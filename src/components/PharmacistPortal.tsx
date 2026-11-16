@@ -146,6 +146,7 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
   // drop the confirmation so patients fall back to the placeholder.
   const PHOTO_INVALIDATING_FIELDS: Array<keyof MedicationScheduleItem> = [
     'ndc',
+    'din',
     'medicationName',
     'genericName',
     'strength',
@@ -476,7 +477,7 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
               <MedicationPhotoVerifier
                 medication={med}
                 pharmacistName={currentConsultation.pharmacistName}
-                onNdcChange={(ndc) => handleUpdateMed(med.id, 'ndc', ndc)}
+                onFieldChange={(field, value) => handleUpdateMed(med.id, field, value)}
                 onConfirmPhoto={(photo) => handleConfirmPhoto(med.id, photo)}
                 onRemovePhoto={() => handleRemovePhoto(med.id)}
               />

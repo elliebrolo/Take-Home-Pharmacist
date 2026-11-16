@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local photo data: pharmacist uploads and the NLM reference photo set
+data/
