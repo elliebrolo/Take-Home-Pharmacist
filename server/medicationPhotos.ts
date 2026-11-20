@@ -259,6 +259,8 @@ export function registerMedicationPhotoRoutes(app: Express) {
   const staticHeaders = (res: Response) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+    // Behind sign-in: browsers may keep it, shared caches/proxies must not.
+    res.setHeader('Cache-Control', 'private, max-age=2592000');
   };
   app.use('/uploads', express.static(UPLOAD_DIR, { index: false, dotfiles: 'deny', maxAge: '30d', immutable: true, setHeaders: staticHeaders }));
   app.use('/nlm-images', express.static(NLM_IMAGE_DIR, { index: false, dotfiles: 'deny', maxAge: '30d', setHeaders: staticHeaders }));

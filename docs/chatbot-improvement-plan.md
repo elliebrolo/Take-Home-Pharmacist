@@ -1,6 +1,6 @@
 # Chatbot Safety and Reliability Plan
 
-Status: proposed, not started. Saved for future implementation; UI improvements from peer evaluation take priority first.
+Status: implemented as a prototype, NOT clinically validated. See "Implementation status" at the end for what is done, what is partial, and what is still open.
 
 ## Why this plan exists
 
@@ -70,3 +70,17 @@ Everything is currently React state, and the browser sends the regimen with each
 ## Out of scope
 
 A real deployment would also need HIPAA compliance, including a business associate agreement with the model provider, and a check on whether this counts as a regulated medical device.
+
+## Implementation status
+
+| Phase | State | Where |
+| --- | --- | --- |
+| 0 Remove hazards | Done. Canned answers, hardcoded drug/food rules (server and client), fictional clinics/hotlines, "Dr. Jenkins" chat identity and the invented-medication parser fallback are removed. Fallback is one honest message with the pharmacy's own number. | `server.ts`, `server/chat/fixedText.ts`, `src/components/*` |
+| 1 Server foundation | Partial. SQLite (`node:sqlite`), signed-cookie sessions with patient/pharmacist roles, server-side records and chat history, audit log, rate limits. Auth is a prototype passcode scheme, not a real identity provider. | `server/core/*`, `server/routes/account.ts` |
+| 2 Sourced drug data | Partial. RxNorm ids at approval; FDA label sections from DailyMed cached with set id, version, date and URL, refreshed weekly on use. One manufacturer's label per drug. No scheduled change-flagging job; no drug-drug interaction database (see Open decisions). | `server/knowledge/*` |
+| 3 Grounded answers | Done, with lexical validation only. Numbered sources, per-block citations, checks for uncited blocks, unprovided sources, drug names or doses absent from the cited text, stop/skip/"safe" instructions, invented quotes and identity claims. Rejected drafts go to the pharmacist, never the patient. | `server/chat/answer.ts`, `validate.ts` |
+| 4 Triage | Done. Model classification plus keyword net that can only raise the level; model failure, bad output or low confidence means urgent; negation handled; a few Spanish/French/Chinese phrases. Emergency wording is fixed text that still needs clinical sign-off. | `server/chat/triage.ts` |
+| 5 Pharmacist review | Done for the main paths. Drafts are invisible to patients until a pharmacist attests and RxNorm resolves every drug; queue for escalations, blocked answers, unanswerable questions and a sampled audit (default 20%) with ok/wrong/unsafe flags; replies appear in the patient chat marked as written by a person. | `server/core/consultations.ts`, `server/routes/review.ts`, `src/components/ReviewQueue.tsx` |
+| 6 Evaluation gate | Started. `npm test` runs the reproducible suite. Flagged review items can be exported as regression cases. There is no release gate in CI and the emergency set is small. | `tests/`, `GET /api/review-items-flagged` |
+
+Still open: real authentication and consent, encryption of data at rest, a business associate agreement with the model provider, a larger clinician-reviewed evaluation set (including more languages), clinician review of every fixed text and of the demo consultations (which contain unreferenced clinical claims written as sample data), Canadian product data (Health Canada DPD is used for DIN checks only), and a notification path so pharmacists learn of urgent items without keeping the workspace open.

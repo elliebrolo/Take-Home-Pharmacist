@@ -7,6 +7,8 @@ interface EmergencyModalProps {
   onClose: () => void;
   triageData?: EmergencyTriageResult | null;
   patientName?: string;
+  pharmacyName?: string;
+  pharmacyPhone?: string;
 }
 
 export const EmergencyModal: React.FC<EmergencyModalProps> = ({
@@ -14,48 +16,22 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
   onClose,
   triageData,
   patientName = 'Patient',
+  pharmacyName,
+  pharmacyPhone,
 }) => {
   if (!isOpen) return null;
 
   const severity = triageData?.severity || 'urgent_care';
   const is911 = severity === 'emergency_911';
 
-  const defaultClinics = triageData?.recommendedClinics?.length
-    ? triageData.recommendedClinics
-    : [
-        {
-          name: 'ScriptCare Rapid Walk-In Urgent Care Clinic',
-          distance: '0.6 miles away',
-          address: '1240 Apothecary Way, Suite 100, Metro City',
-          phone: '(555) 234-5670',
-          isOpen247: true,
-          estimatedWaitTime: '15 mins wait',
-        },
-        {
-          name: 'City General Hospital Emergency Department (Level 1 Trauma)',
-          distance: '1.2 miles away',
-          address: '450 Health Sciences Blvd, Metro City',
-          phone: '(555) 911-2000',
-          isOpen247: true,
-          estimatedWaitTime: 'Immediate Medical Triage',
-        },
-        {
-          name: 'MetroHealth Urgent & Extended Primary Care',
-          distance: '1.4 miles away',
-          address: '610 Market Street, 2nd Floor',
-          phone: '(555) 345-6789',
-          isOpen247: false,
-          estimatedWaitTime: '20 mins wait (Open until 10:00 PM)',
-        },
-      ];
-
+  // Real numbers only. There is no clinic directory behind this app, so no clinics are listed.
   const defaultHotlines = triageData?.hotlines?.length
     ? triageData.hotlines
     : [
-        { name: 'Emergency Medical Services', phone: '911', badge: 'Life-Threatening Emergency' },
-        { name: 'National Poison Control Center', phone: '1-800-222-1222', badge: '24/7 Free Expert Toxicologist' },
-        { name: 'ScriptCare 24/7 Clinical Pharmacy Hotline', phone: '1-800-555-7427', badge: 'On-Call Pharmacist' },
-        { name: 'Suicide & Crisis Lifeline', phone: '988', badge: '24/7 Confidential Crisis Support' },
+        { name: 'Emergency services', phone: '911', badge: 'Life-threatening emergency' },
+        { name: 'Poison Control', phone: '1-800-222-1222', badge: 'Poisoning or overdose' },
+        ...(pharmacyPhone ? [{ name: pharmacyName || 'Your pharmacy', phone: pharmacyPhone, badge: 'Your pharmacy' }] : []),
+        { name: 'Crisis line', phone: '988', badge: 'Call or text, 24/7' },
       ];
 
   return (
@@ -147,86 +123,27 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
             </a>
           </div>
 
-          {/* Clinical Advice for Nausea & Feeling Sick */}
+          {/* Only plain, non-clinical guidance. Medical advice for symptoms is left to people. */}
           <div className="p-4 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-800">
             <div className="flex items-center gap-2 mb-2">
               <HeartPulse className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Immediate Steps If You Feel Too Sick or Nauseous:
-              </h3>
+              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">If you are worried right now</h3>
             </div>
-            <ul className="text-sm space-y-1.5 text-slate-600 dark:text-slate-300 list-disc list-inside">
-              <li>
-                <strong className="text-slate-800 dark:text-slate-200">Check Meal Timing:</strong> Medications like Metformin, Metoprolol, or Augmentin cause nausea when taken on an empty stomach. Take with food or a snack.
-              </li>
-              <li>
-                <strong className="text-slate-800 dark:text-slate-200">Stay Hydrated with Small Sips:</strong> Drink small sips of cool water, ginger tea, or electrolyte solution. Avoid gulping large amounts of water at once.
-              </li>
-              <li>
-                <strong className="text-slate-800 dark:text-slate-200">Remain Upright:</strong> Keep your head elevated at 45 degrees or stay seated for 30 minutes after taking pills.
-              </li>
-              <li>
-                <strong className="text-slate-800 dark:text-slate-200">Do NOT Double Up:</strong> If you threw up your dose within 15 minutes, speak with your clinical pharmacist before retaking any pills.
-              </li>
+            <ul className="text-sm space-y-1.5 text-slate-700 dark:text-slate-200 list-disc list-inside">
+              <li>If you think it is an emergency, call 911. Do not wait for a message back from this app.</li>
+              <li>Keep your medicine bottles with you so you can tell the person who helps you what you take.</li>
+              <li>Do not take extra doses to make up for anything. Ask your pharmacist first.</li>
             </ul>
           </div>
 
-          {/* Nearby Urgent Care Clinics */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                Nearby Walk-In Urgent Care & Emergency Clinics
-              </h3>
-              <span className="text-sm text-slate-500">Live Availability</span>
-            </div>
-
-            <div className="space-y-3">
-              {defaultClinics.map((clinic, idx) => (
-                <div
-                  key={idx}
-                  className="p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700/80 rounded-xl hover:border-teal-500 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">
-                          {clinic.name}
-                        </span>
-                        {clinic.isOpen247 && (
-                          <span className="px-2 py-0.5 text-sm font-semibold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 rounded">
-                            Open 24/7
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-slate-500 mt-1">
-                        <span className="flex items-center gap-1">
-                          <MapPin className="w-3.5 h-3.5" />
-                          {clinic.distance} · {clinic.address}
-                        </span>
-                        <span className="flex items-center gap-1 font-mono">
-                          <Clock className="w-3.5 h-3.5" />
-                          {clinic.estimatedWaitTime}
-                        </span>
-                      </div>
-                    </div>
-
-                    <a
-                      href={`tel:${clinic.phone.replace(/[^0-9]/g, '')}`}
-                      className="px-3 py-1.5 text-sm font-semibold text-white bg-slate-900 dark:bg-teal-600 rounded-lg hover:bg-slate-800 dark:hover:bg-teal-500 transition-colors flex items-center gap-1 shrink-0"
-                    >
-                      <Phone className="w-3.5 h-3.5" />
-                      Call Clinic
-                    </a>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            This app can't find clinics near you. For urgent care, call your pharmacy, a nurse line, or search for your nearest emergency department.
+          </p>
 
           {/* 24/7 Clinical Hotlines */}
           <div>
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">
-              Direct Clinical Hotlines
+              Phone numbers
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
               {defaultHotlines.map((hotline, idx) => (
@@ -255,7 +172,7 @@ export const EmergencyModal: React.FC<EmergencyModalProps> = ({
         {/* Footer Actions */}
         <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <span className="text-sm text-slate-500">
-            ScriptCare Clinical Triage · Dedicated to {patientName}
+            For {patientName} · TakeHomePharmacist
           </span>
           <button
             onClick={onClose}

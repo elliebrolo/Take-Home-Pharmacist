@@ -1,22 +1,57 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileText, Sparkles, CheckCircle2, AlertTriangle, RefreshCw, Plus, Trash2, ArrowRight, ShieldAlert, Pill, Eye } from 'lucide-react';
 import { ConsultationRecord, MedicationScheduleItem, DietaryWarning, TimeOfDay, FoodRequirement, VerifiedMedicationPhoto } from '../types/pharmacy';
-import { DEFAULT_CONSULTATIONS } from '../data/defaultConsultations';
 import { PictorialWarningLabel, detectMedicationPictorials, detectFoodQueryPictorial } from './PictorialWarningLabel';
 import { MedicationPhotoVerifier } from './MedicationPhotoVerifier';
 import { DrugCatalogSearch } from './DrugCatalogSearch';
+import { ReviewQueue } from './ReviewQueue';
 
-interface PharmacistPortalProps {
-  currentConsultation: ConsultationRecord;
-  onSaveConsultation: (consultation: ConsultationRecord) => void;
-  onSwitchToPatientView: () => void;
+interface CaseItem {
+  consultation: ConsultationRecord;
+  hasDraft: boolean;
+  approval: { by: string; at: string } | null;
 }
 
-export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
-  currentConsultation,
-  onSaveConsultation,
-  onSwitchToPatientView,
-}) => {
+/** Loads the consultation records from the server, then shows the workspace. */
+export const PharmacistPortal: React.FC<{ pharmacistName: string }> = ({ pharmacistName }) => {
+  const [cases, setCases] = useState<CaseItem[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const load = async () => {
+    try {
+      const r = await fetch('/api/consultations');
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setCases(d.items);
+    } catch (e: any) {
+      setError(e.message || 'Could not load consultations.');
+    }
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  if (error) return <p role="alert" className="text-rose-700 font-semibold">{error}</p>;
+  if (!cases) return <p className="text-slate-600 dark:text-slate-300">Loading records…</p>;
+  if (!cases.length) return <p className="text-slate-600 dark:text-slate-300">No consultation records yet.</p>;
+  return (
+    <div>
+      <ReviewQueue />
+      <PharmacistWorkspace cases={cases} pharmacistName={pharmacistName} onPublished={load} />
+    </div>
+  );
+};
+
+interface WorkspaceProps {
+  cases: CaseItem[];
+  pharmacistName: string;
+  onPublished: () => void;
+}
+
+const PharmacistWorkspace: React.FC<WorkspaceProps> = ({ cases: caseItems, pharmacistName, onPublished }) => {
+  const cases = caseItems.map((c) => c.consultation);
+  const currentConsultation = cases[0];
+  const [attested, setAttested] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishMsg, setPublishMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [selectedCaseId, setSelectedCaseId] = useState(currentConsultation.id);
   const [patientName, setPatientName] = useState(currentConsultation.patientName);
   const [patientAge, setPatientAge] = useState(currentConsultation.patientAge);
@@ -33,7 +68,7 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
   // Load a preset case
   const handleSelectCase = (caseId: string) => {
     setSelectedCaseId(caseId);
-    const found = DEFAULT_CONSULTATIONS.find((c) => c.id === caseId);
+    const found = cases.find((c) => c.id === caseId);
     if (found) {
       setPatientName(found.patientName);
       setPatientAge(found.patientAge);
@@ -42,6 +77,8 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
       setClinicalSummary(found.clinicalSummary);
       setMedications(found.medications);
       setDietaryWarnings(found.generalDietaryWarnings);
+      setAttested(false);
+      setPublishMsg(null);
       setError(null);
     }
   };
@@ -92,11 +129,16 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
     }
   };
 
-  // Save & publish
-  const handlePublish = () => {
+  // Save the draft, then sign it off. The patient sees nothing until this succeeds.
+  const handlePublish = async () => {
+    if (!attested) {
+      setPublishMsg({ ok: false, text: 'Tick the box at the bottom to confirm you checked each medication against the transcript.' });
+      document.getElementById('attest-box')?.scrollIntoView({ block: 'center' });
+      return;
+    }
+    const base = cases.find((c) => c.id === selectedCaseId) ?? currentConsultation;
     const updated: ConsultationRecord = {
-      ...currentConsultation,
-      id: selectedCaseId || `consult-${Date.now()}`,
+      ...base,
       patientName,
       patientAge,
       patientGender,
@@ -104,15 +146,31 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
       clinicalSummary,
       medications,
       generalDietaryWarnings: dietaryWarnings,
-      consultationDate: new Date().toLocaleDateString('en-US', {
-        month: 'long',
-        day: 'numeric',
-        year: 'numeric',
-      }),
     };
-
-    onSaveConsultation(updated);
-    onSwitchToPatientView();
+    setPublishing(true);
+    setPublishMsg(null);
+    try {
+      const put = await fetch(`/api/consultations/${encodeURIComponent(updated.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ consultation: updated }),
+      });
+      if (!put.ok) throw new Error((await put.json()).error || 'Could not save.');
+      const ok = await fetch(`/api/consultations/${encodeURIComponent(updated.id)}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attestChecked: true }),
+      });
+      const d = await ok.json();
+      if (!ok.ok) throw new Error(d.error || 'Could not approve.');
+      setPublishMsg({ ok: true, text: `Approved by ${pharmacistName}. ${updated.patientName} can now see this plan.` });
+      setAttested(false);
+      onPublished();
+    } catch (e: any) {
+      setPublishMsg({ ok: false, text: `Not published: ${e.message}` });
+    } finally {
+      setPublishing(false);
+    }
   };
 
   // Add medication row
@@ -184,7 +242,7 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
               Consultation Transcript Intake & Regimen Architect
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
-              Input verbal pharmacist-patient consultation transcripts. Gemini extracts dosages, timing schedules, food rules, and verbal warnings for the patient's companion app.
+              Paste the consultation transcript. The AI drafts the plan from what was said; you check every line and approve it. Patients see nothing until you approve.
             </p>
           </div>
 
@@ -194,7 +252,7 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
               className="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-sm font-bold rounded-xl transition-colors shadow-sm flex items-center gap-2"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Publish to Patient App
+              Approve and publish
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
@@ -203,10 +261,10 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
         {/* Preset Case Loader */}
         <div className="mb-6">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
-            Load Pre-Configured Clinical Consultation Cases:
+            Demo patients (fictional):
           </label>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {DEFAULT_CONSULTATIONS.map((c) => {
+            {cases.map((c) => {
               const isSelected = selectedCaseId === c.id;
               return (
                 <button
@@ -539,26 +597,39 @@ export const PharmacistPortal: React.FC<PharmacistPortalProps> = ({
         {/* Drug reference (moved here from the patient app) */}
         <details className="pt-4 border-t border-slate-200 dark:border-slate-800">
           <summary className="text-sm font-bold text-slate-900 dark:text-slate-100 cursor-pointer">
-            Drug reference: schedules, boxed warnings and dosing
+            Drug reference: FDA label text
           </summary>
           <div className="mt-4">
             <DrugCatalogSearch />
           </div>
         </details>
 
-        {/* Publish Action Footer */}
-        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="text-xs text-slate-500">
-            Dr. Sarah Jenkins, PharmD · ScriptCare Clinical Pharmacy
+        {/* Sign-off */}
+        <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+          <label id="attest-box" className="flex items-start gap-3 text-sm text-slate-800 dark:text-slate-100">
+            <input type="checkbox" checked={attested} onChange={(e) => setAttested(e.target.checked)} className="mt-1 w-5 h-5" />
+            <span>
+              I have checked each medication, dose, schedule and warning above against the transcript, and I approve this plan for the patient.
+              Medication names are also checked against RxNorm when you approve.
+            </span>
+          </label>
+          {publishMsg && (
+            <p role="status" className={`text-sm font-semibold ${publishMsg.ok ? 'text-emerald-800 dark:text-emerald-300' : 'text-rose-700 dark:text-rose-300'}`}>
+              {publishMsg.text}
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <div className="text-xs text-slate-500">Signed in as {pharmacistName}. Your name and the time are recorded with the approval.</div>
+            <button
+              onClick={handlePublish}
+              disabled={publishing}
+              className="px-6 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white text-sm font-bold rounded-xl transition-colors shadow-sm flex items-center gap-2"
+            >
+              {publishing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              Approve and publish
+              <ArrowRight className="w-4 h-4" />
+            </button>
           </div>
-          <button
-            onClick={handlePublish}
-            className="px-6 py-2.5 bg-teal-700 hover:bg-teal-800 text-white text-sm font-bold rounded-xl transition-colors shadow-sm flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            Publish Updates to Patient App
-            <ArrowRight className="w-4 h-4" />
-          </button>
         </div>
       </div>
     </div>

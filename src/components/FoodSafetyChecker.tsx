@@ -13,14 +13,24 @@ interface FoodSafetyCheckerProps {
   knownWarnings: DietaryWarning[];
 }
 
+interface FoodSource {
+  id: string;
+  label: string;
+  quote: string;
+  url?: string;
+}
+
 interface InteractionResult {
-  isSafe: boolean;
+  /** 'caution': a source mentions this food. 'unknown': nothing found. The app never says a food is safe. */
+  verdict: 'caution' | 'unknown';
+  isSafe: false;
   severity: 'none' | 'advisory' | 'moderate' | 'severe';
   title: string;
   summary: string;
   details: string;
   recommendation: string;
   affectedMedications: string[];
+  sources: FoodSource[];
 }
 
 export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
@@ -43,151 +53,6 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
     'Cranberry Juice',
   ];
 
-  // Client-side clinical evaluator fallback to guarantee 100% reliability even if backend or upstream API is offline
-  const evaluateClientFallback = (food: string): InteractionResult => {
-    const f = food.toLowerCase().trim();
-    const medNames = medications.map(m => m.medicationName.toLowerCase());
-
-    const hasStatin = medNames.some(m => m.includes('statin') || m.includes('atorvastatin') || m.includes('lipitor'));
-    const hasAce = medNames.some(m => m.includes('lisinopril') || m.includes('enalapril') || m.includes('losartan'));
-    const hasBeta = medNames.some(m => m.includes('metoprolol') || m.includes('atenolol'));
-    const hasAspirin = medNames.some(m => m.includes('aspirin'));
-    const hasMetformin = medNames.some(m => m.includes('metformin'));
-    const hasAntibiotic = medNames.some(m => m.includes('amoxicillin') || m.includes('augmentin') || m.includes('cipro') || m.includes('doxycycline'));
-
-    if (f.includes('grapefruit') || f.includes('pomelo')) {
-      if (hasStatin) {
-        return {
-          isSafe: false,
-          severity: 'severe',
-          title: 'Severe CYP3A4 Interaction Warning (Grapefruit Contraindication)',
-          summary: 'Grapefruit and grapefruit juice block the CYP3A4 enzyme, leading to dangerously elevated statin levels in the bloodstream and severe risk of muscle breakdown (rhabdomyolysis) and kidney failure.',
-          details: 'Furanocoumarins in grapefruit irreversibly inhibit intestinal CYP3A4 for up to 72 hours, multiplying Atorvastatin blood concentration by over 300%.',
-          recommendation: 'STRICTLY AVOID grapefruit and grapefruit juice. Safe alternatives: 100% orange juice, apple juice, grape juice, or water.',
-          affectedMedications: medications.filter(m => m.medicationName.toLowerCase().includes('statin')).map(m => m.medicationName),
-        };
-      }
-      return {
-        isSafe: true,
-        severity: 'advisory',
-        title: 'Grapefruit Safe for Your Current Prescriptions',
-        summary: 'None of your active prescriptions depend on intestinal CYP3A4 clearance.',
-        details: 'Grapefruit primarily interacts with specific statins and calcium channel blockers, none of which are in your active list.',
-        recommendation: 'Safe to enjoy in moderation. Re-check if your physician prescribes any new cardiovascular medications.',
-        affectedMedications: [],
-      };
-    }
-
-    if (f.includes('alcohol') || f.includes('beer') || f.includes('wine') || f.includes('vodka') || f.includes('whiskey')) {
-      if (hasMetformin) {
-        return {
-          isSafe: false,
-          severity: 'severe',
-          title: 'High Risk: Alcohol & Metformin Interaction (Lactic Acidosis)',
-          summary: 'Alcohol drastically multiplies the risk of fatal Lactic Acidosis and severe hypoglycemia when taken with Metformin.',
-          details: 'Alcohol impairs liver lactate clearance and gluconeogenesis.',
-          recommendation: 'Avoid excessive alcohol or binge drinking while taking Metformin.',
-          affectedMedications: ['Metformin'],
-        };
-      }
-      if (hasAspirin || hasBeta || hasAce) {
-        return {
-          isSafe: false,
-          severity: 'moderate',
-          title: 'Bleeding Risk & Orthostatic Dizziness Warning (Alcohol)',
-          summary: 'Alcohol irritates the stomach lining with daily Aspirin, and causes vasodilation that compounds blood pressure drops and dizziness from Lisinopril and Metoprolol.',
-          details: 'Synergistic gastric mucosal irritation and impaired baroreceptor reflex compensation.',
-          recommendation: 'Avoid alcohol or limit strictly. Never drink near your scheduled pill dosing.',
-          affectedMedications: medications.filter(m => ['aspirin', 'lisinopril', 'metoprolol'].some(k => m.medicationName.toLowerCase().includes(k))).map(m => m.medicationName),
-        };
-      }
-    }
-
-    if (f.includes('potassium') || f.includes('salt substitute') || f.includes('no-salt') || f.includes('nu-salt')) {
-      if (hasAce) {
-        return {
-          isSafe: false,
-          severity: 'severe',
-          title: 'Dangerous Hyperkalemia Hazard (Potassium Salt Substitute)',
-          summary: 'Lisinopril reduces potassium excretion by the kidneys. Potassium salt substitutes contain concentrated potassium chloride and can cause fatal cardiac arrhythmias.',
-          details: 'Concentrated potassium chloride supplements overwhelm reduced renal clearance in patients on ACE inhibitors.',
-          recommendation: 'STRICTLY AVOID potassium salt substitutes (NoSalt, Nu-Salt, Morton Lite). Season food with garlic, herbs, black pepper, or lemon juice.',
-          affectedMedications: medications.filter(m => m.medicationName.toLowerCase().includes('lisinopril')).map(m => m.medicationName),
-        };
-      }
-    }
-
-    if (f.includes('spinach') || f.includes('kale') || f.includes('greens') || f.includes('salad')) {
-      return {
-        isSafe: true,
-        severity: 'none',
-        title: 'Spinach & Leafy Greens are Heart-Safe and Highly Encouraged',
-        summary: 'Fresh spinach, kale, and salad greens do NOT interact with Aspirin, Atorvastatin, Lisinopril, or Metoprolol. Their dietary nitrates, magnesium, and antioxidants support cardiovascular health.',
-        details: 'Vitamin K restrictions only apply to Warfarin (Coumadin). Aspirin acts on platelets and is completely unaffected by dietary vitamin K.',
-        recommendation: 'Safe and strongly recommended as part of a heart-healthy diet. Wash thoroughly and enjoy freely.',
-        affectedMedications: [],
-      };
-    }
-
-    if (f.includes('banana') || f.includes('avocado')) {
-      return {
-        isSafe: true,
-        severity: 'advisory',
-        title: 'Moderate Dietary Banana & Avocado Permitted',
-        summary: 'Standard fresh bananas (~400 mg potassium) and avocados are safe for patients with normal kidney function.',
-        details: 'Dietary potassium from fresh fruit is absorbed gradually. The primary danger is concentrated potassium salt substitutes and supplements.',
-        recommendation: 'Enjoy 1 banana daily in your diet. Avoid concentrated potassium powder and salt substitutes.',
-        affectedMedications: hasAce ? medications.filter(m => m.medicationName.toLowerCase().includes('lisinopril')).map(m => m.medicationName) : [],
-      };
-    }
-
-    if (f.includes('milk') || f.includes('dairy') || f.includes('cheese')) {
-      if (hasAntibiotic && (f.includes('yogurt') || f.includes('probiotic'))) {
-        return {
-          isSafe: true,
-          severity: 'advisory',
-          title: 'Separate Yogurt / Probiotics by 2-3 Hours from Antibiotics',
-          summary: 'Eating yogurt is great to protect gut flora, but separate by 2-3 hours so the antibiotic does not kill the live cultures.',
-          details: 'Concurrent administration destroys live probiotic bacteria before they reach the lower intestine.',
-          recommendation: 'Eat yogurt or probiotics 2 to 3 hours after taking your antibiotic.',
-          affectedMedications: medications.filter(m => m.medicationName.toLowerCase().includes('amoxicillin') || m.medicationName.toLowerCase().includes('augmentin')).map(m => m.medicationName),
-        };
-      }
-      return {
-        isSafe: true,
-        severity: 'none',
-        title: 'Dairy Products are Safe with Your Regimen',
-        summary: 'Milk, cheese, yogurt, and other dairy products do NOT interact with Atorvastatin, Metoprolol, Lisinopril, or Aspirin.',
-        details: 'None of your prescribed medications undergo calcium chelation. Taking morning pills with a breakfast containing dairy is safe.',
-        recommendation: 'Safe to consume. Always swallow your tablets with a full glass of plain water for optimal absorption.',
-        affectedMedications: [],
-      };
-    }
-
-    if (f.includes('coffee') || f.includes('espresso') || f.includes('caffeine')) {
-      return {
-        isSafe: true,
-        severity: 'advisory',
-        title: 'Moderate Coffee Permitted (With Breakfast)',
-        summary: 'A moderate cup of coffee (1-2 cups) with breakfast is safe. Avoid excessive caffeine as it can counteract blood pressure and heart rate regulation.',
-        details: 'Caffeine has mild sympathomimetic effects that stimulate beta-1 adrenergic receptors.',
-        recommendation: 'Enjoy coffee with breakfast rather than on an empty stomach. Always swallow your medication with water.',
-        affectedMedications: hasBeta ? ['Metoprolol Succinate'] : [],
-      };
-    }
-
-    // Default safe determination
-    return {
-      isSafe: true,
-      severity: 'none',
-      title: `${food.charAt(0).toUpperCase() + food.slice(1)}: Safe to Consume with Regimen`,
-      summary: `${food} has no known harmful pharmacological interactions with your active prescriptions.`,
-      details: 'This food does not alter CYP450 liver enzymes, renal excretion pathways, or gastrointestinal drug absorption.',
-      recommendation: 'Safe to enjoy in your normal diet. Remember to always swallow oral tablets with a full glass of plain water.',
-      affectedMedications: [],
-    };
-  };
-
   const handleCheckFood = async (food: string) => {
     const item = food.trim();
     if (!item) return;
@@ -200,24 +65,18 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
       const response = await fetch('/api/check-food-interaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          foodItem: item,
-          activeMedications: medications,
-        }),
+        body: JSON.stringify({ foodItem: item }),
       });
 
       const data = await response.json();
-      if (data.success && data.result) {
+      if (response.ok && data.success && data.result) {
         setResult(data.result);
       } else {
-        // Use client-side clinical pharmacology fallback
-        const fallback = evaluateClientFallback(item);
-        setResult(fallback);
+        // No local guess: a wrong "this is fine" is worse than no answer.
+        setError(data.error || "We couldn't check that right now. Please ask your pharmacist.");
       }
     } catch {
-      // Use client-side clinical pharmacology fallback on network interruption
-      const fallback = evaluateClientFallback(item);
-      setResult(fallback);
+      setError("We couldn't check that right now. Please ask your pharmacist.");
     } finally {
       setIsLoading(false);
     }
@@ -333,7 +192,7 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
                 ? 'bg-amber-50/70 dark:bg-amber-950/40 border-amber-200 dark:border-amber-900'
                 : result.severity === 'advisory'
                 ? 'bg-blue-50/70 dark:bg-blue-950/40 border-blue-200 dark:border-blue-900'
-                : 'bg-emerald-50/70 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-900'
+                : 'bg-slate-50 dark:bg-slate-800/60 border-slate-300 dark:border-slate-700'
             }`}
           >
             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -356,18 +215,14 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
                 />
               </div>
             ) : (
-              /* Visual Confirmation Badge for Safe Foods */
-              <div className="my-3 p-3.5 bg-emerald-500/10 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 rounded-xl flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shrink-0 shadow-sm">
-                  ✓
+              /* Nothing found: say so plainly. This is not a safety confirmation. */
+              <div className="my-3 p-3.5 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-slate-600 text-white flex items-center justify-center font-bold text-lg shrink-0" aria-hidden="true">
+                  ?
                 </div>
                 <div>
-                  <div className="text-sm font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
-                    No problem found
-                  </div>
-                  <div className="text-sm text-slate-600 dark:text-slate-300">
-                    We did not find a problem with your medicines. If you are unsure, ask your pharmacist.
-                  </div>
+                  <div className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">Not checked: ask your pharmacist</div>
+                  <div className="text-sm text-slate-600 dark:text-slate-300">This does not mean it is safe.</div>
                 </div>
               </div>
             )}
@@ -392,6 +247,24 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
                 <strong className="text-slate-900 dark:text-slate-100">What to do: </strong>
                 <span className="text-slate-700 dark:text-slate-300">{result.recommendation}</span>
               </div>
+              {result.sources?.length > 0 && (
+                <details>
+                  <summary className="font-semibold text-teal-800 dark:text-teal-300 cursor-pointer min-h-8">Where this comes from</summary>
+                  <ul className="mt-1 space-y-2">
+                    {result.sources.map((src) => (
+                      <li key={src.id} className="text-slate-600 dark:text-slate-300">
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">{src.label}: </span>
+                        <span className="italic">“{src.quote}”</span>{' '}
+                        {src.url && (
+                          <a href={src.url} target="_blank" rel="noopener noreferrer" className="underline text-teal-800 dark:text-teal-300">
+                            Open label
+                          </a>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               {result.details && (
                 <details>
                   <summary className="font-semibold text-teal-800 dark:text-teal-300 cursor-pointer min-h-8">Why?</summary>

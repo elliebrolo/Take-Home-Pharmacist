@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Send, Bot, User, AlertTriangle, Phone, MapPin, RefreshCw, Sparkles, ShieldAlert, HeartPulse } from 'lucide-react';
-import { ConsultationRecord, ChatMessage, EmergencyTriageResult } from '../types/pharmacy';
+import { Send, AlertTriangle, Phone, MapPin, Sparkles, ShieldAlert, HeartPulse, UserCheck, FileText } from 'lucide-react';
+import { ConsultationRecord, ChatMessage, ChatCitation, EmergencyTriageResult } from '../types/pharmacy';
 import { notificationService } from '../utils/audioNotification';
 import { PictorialWarningLabel, detectMedicationPictorials } from './PictorialWarningLabel';
 import { ChatMarkdown } from './ChatMarkdown';
@@ -18,7 +18,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
     {
       id: 'welcome-1',
       sender: 'pharmacist_ai',
-      text: `Hello ${consultation.patientName}! I am an AI assistant. I answer using the notes from your pharmacist visit on ${consultation.consultationDate}.\n\nYou can ask when to take your medicines, which foods to avoid, or what to do about a missed dose. If you feel very unwell, tap the red help button.`,
+      text: `Hello ${consultation.patientName}. I am an AI assistant, not a pharmacist. I answer only from the notes of your pharmacist visit on ${consultation.consultationDate} and from the official drug label, and I show where each answer comes from.\n\nI can't tell you to stop or change a medicine. Questions like that go to your pharmacist. If you feel very unwell, tap the red help button or call 911.`,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -35,6 +35,42 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
   }, [messages, isLoading]);
 
   const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
+  const lastServerId = useRef(0);
+
+  // Restore the saved conversation, and pick up replies a pharmacist writes later.
+  useEffect(() => {
+    let cancelled = false;
+    const toLocal = (m: any): ChatMessage => ({
+      id: `srv-${m.id}`,
+      sender: m.sender === 'patient' ? 'user' : m.sender === 'pharmacist' ? 'pharmacist' : 'pharmacist_ai',
+      kind: m.kind,
+      text: m.text,
+      citations: m.citations,
+      timestamp: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    });
+    const load = async (initial: boolean) => {
+      try {
+        const r = await fetch(`/api/chat/messages?after=${lastServerId.current}`);
+        if (!r.ok || cancelled) return;
+        const { messages: rows } = await r.json();
+        if (!rows.length) return;
+        lastServerId.current = Math.max(lastServerId.current, ...rows.map((m: any) => m.id));
+        if (initial) setMessages((prev) => [prev[0], ...rows.map(toLocal)]);
+        else {
+          const human = rows.filter((m: any) => m.sender === 'pharmacist');
+          if (human.length) setMessages((prev) => [...prev, ...human.map(toLocal)]);
+        }
+      } catch {
+        /* offline: try again on the next poll */
+      }
+    };
+    load(true);
+    const timer = setInterval(() => load(false), 20_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
 
   // Suggestions come from this patient's own medicines, not a fixed list.
   const quickPrompts = useMemo(() => {
@@ -68,17 +104,16 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
     setIsLoading(true);
     setStreamingMsgId(aiMsgId);
 
+    let streamStarted = false;
     try {
-      // 1. High-speed streaming SSE connection (starts streaming in ~250ms)
+      // The server checks the answer before sending it, so text arrives only after it has been validated.
       const response = await fetch('/api/patient-chat-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userText,
-          consultationData: consultation,
-        }),
+        body: JSON.stringify({ message: userText }),
       });
 
+      if (response.status === 401) throw new Error('signed-out');
       if (!response.ok || !response.body) {
         throw new Error('Streaming not available, falling back to instant JSON');
       }
@@ -87,6 +122,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
       let accumulatedText = '';
+      streamStarted = false;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -106,6 +142,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
             const payload = JSON.parse(payloadStr);
 
             if (payload.type === 'start') {
+              streamStarted = true;
               const triage = payload.triage;
               if (triage?.isUrgent) {
                 notificationService.playEmergencyAlertTone();
@@ -124,6 +161,9 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
                   m.id === aiMsgId ? { ...m, text: accumulatedText } : m
                 )
               );
+            } else if (payload.type === 'done') {
+              if (payload.messageId) lastServerId.current = Math.max(lastServerId.current, payload.messageId);
+              setMessages((prev) => prev.map((m) => (m.id === aiMsgId ? { ...m, kind: payload.kind, citations: payload.citations } : m)));
             } else if (payload.type === 'error') {
               throw new Error(payload.error || 'Server stream error');
             }
@@ -133,19 +173,27 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
         }
       }
     } catch (streamErr) {
-      // Fast fallback to non-streaming endpoint
+      if (streamStarted || (streamErr as Error)?.message === 'signed-out') {
+        // The server already handled this question (or the session ended); asking again would duplicate it.
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === aiMsgId && !m.text
+              ? { ...m, text: (streamErr as Error)?.message === 'signed-out' ? 'Your session ended. Please sign in again.' : 'The connection dropped. Please check the conversation again in a moment, or call your pharmacy.' }
+              : m
+          )
+        );
+        return;
+      }
       try {
         const response = await fetch('/api/patient-chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: userText,
-            consultationData: consultation,
-          }),
+          body: JSON.stringify({ message: userText }),
         });
 
         const data = await response.json();
         if (data.success) {
+          if (data.messageId) lastServerId.current = Math.max(lastServerId.current, data.messageId);
           const triage = data.triage;
           if (triage?.isUrgent) {
             notificationService.playEmergencyAlertTone();
@@ -156,6 +204,8 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
                 ? {
                     ...m,
                     text: data.text,
+                    kind: data.kind,
+                    citations: data.citations,
                     isEmergencyAlert: triage?.isUrgent,
                     triageData: triage,
                   }
@@ -168,7 +218,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
               m.id === aiMsgId
                 ? {
                     ...m,
-                    text: 'I am temporarily having trouble reaching the clinical database. Please call our 24/7 Pharmacy line at 1-800-555-7427 or 911.',
+                    text: `I can't answer that right now. Please call your pharmacy on ${consultation.pharmacyPhone}. If this is an emergency, call 911.`,
                   }
                 : m
             )
@@ -180,7 +230,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
             m.id === aiMsgId
               ? {
                   ...m,
-                  text: 'Network connection issue. Please verify your connection or call the pharmacy desk directly.',
+                  text: `Network problem. Please check your connection, or call your pharmacy on ${consultation.pharmacyPhone}.`,
                 }
               : m
           )
@@ -198,24 +248,16 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
       {/* Chat Header */}
       <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <img
-              src="/src/assets/images/avatar_pharmacist_lead_1793849084943.jpg"
-              alt=""
-              className="w-11 h-11 rounded-full object-cover border-2 border-teal-500"
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
-              }}
-            />
-            <div className="w-3 h-3 bg-emerald-500 rounded-full border-2 border-white absolute bottom-0 right-0" />
+          <div
+            aria-hidden="true"
+            className="w-11 h-11 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-700 dark:text-slate-200 text-sm font-extrabold"
+          >
+            AI
           </div>
           <div>
-            <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">
-              Dr. Sarah Jenkins, PharmD (AI Consultation Assistant)
-            </h3>
+            <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">AI assistant (not a pharmacist)</h3>
             <p className="text-sm text-slate-600 dark:text-slate-300">
-              Answers use your {consultation.consultationDate} pharmacist visit
+              Answers come from your {consultation.consultationDate} visit notes and the FDA drug label. It can be wrong.
             </p>
           </div>
         </div>
@@ -239,12 +281,20 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
       >
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+            {msg.sender === 'pharmacist' && (
+              <div
+                aria-hidden="true"
+                className="w-9 h-9 rounded-full bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-800 dark:text-emerald-300 shrink-0 mt-1"
+              >
+                <UserCheck className="w-5 h-5" />
+              </div>
+            )}
             {msg.sender === 'pharmacist_ai' && (
               <div
                 aria-hidden="true"
                 className="w-9 h-9 rounded-full bg-teal-100 dark:bg-teal-950 flex items-center justify-center text-teal-800 dark:text-teal-300 shrink-0 text-sm font-bold mt-1"
               >
-                Rx
+                AI
               </div>
             )}
 
@@ -273,10 +323,10 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
                       <Phone className="w-4 h-4" aria-hidden="true" /> Call 911
                     </a>
                     <a
-                      href="tel:18005557427"
+                      href={`tel:${consultation.pharmacyPhone.replace(/[^0-9]/g, '')}`}
                       className="min-h-11 px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white rounded-lg text-sm font-bold flex items-center gap-1.5 shadow-sm transition-colors"
                     >
-                      <Phone className="w-4 h-4" aria-hidden="true" /> Pharmacy 24/7 (1-800-555-7427)
+                      <Phone className="w-4 h-4" aria-hidden="true" /> Your pharmacy ({consultation.pharmacyPhone})
                     </a>
                     <a
                       href="tel:18002221222"
@@ -290,16 +340,21 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
                       className="min-h-11 px-4 py-2 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 border border-slate-300 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg text-sm font-bold flex items-center gap-1.5 transition-colors"
                     >
                       <MapPin className="w-4 h-4 text-teal-700" aria-hidden="true" />
-                      Find urgent care
+                      More emergency numbers
                     </button>
                   </div>
                 </div>
               )}
 
+              {msg.sender === 'pharmacist' && (
+                <p className="mb-1 px-1 text-sm font-bold text-emerald-800 dark:text-emerald-300">Written by your pharmacist (a person)</p>
+              )}
               <div
                 className={`p-4 rounded-2xl text-base leading-relaxed ${
                   msg.sender === 'user'
                     ? 'bg-teal-700 text-white rounded-tr-none'
+                    : msg.sender === 'pharmacist'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-slate-900 dark:text-slate-100 rounded-tl-none border border-emerald-300 dark:border-emerald-800'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-none border border-slate-200 dark:border-slate-700'
                 }`}
               >
@@ -343,6 +398,10 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
                     );
                   })()}
               </div>
+
+              {msg.sender === 'pharmacist_ai' && msg.kind === 'answer' && msg.citations && msg.citations.length > 0 && (
+                <SourceList citations={msg.citations} />
+              )}
 
               <div className={`text-sm text-slate-500 mt-1 px-1 ${msg.sender === 'user' ? 'text-right' : 'text-left'}`}>
                 {msg.timestamp}
@@ -453,3 +512,26 @@ const AnswerText: React.FC<{ text: string; isStreaming: boolean; allowCollapse: 
     </div>
   );
 };
+
+
+/** Where an answer came from: the patient's own visit notes, or the FDA label (with a link). */
+const SourceList: React.FC<{ citations: ChatCitation[] }> = ({ citations }) => (
+  <details className="mt-2 px-1 text-sm text-slate-700 dark:text-slate-300">
+    <summary className="cursor-pointer min-h-11 flex items-center gap-1.5 font-semibold text-teal-800 dark:text-teal-300">
+      <FileText className="w-4 h-4" aria-hidden="true" /> Where this comes from ({citations.length})
+    </summary>
+    <ul className="space-y-2 mt-1">
+      {citations.map((c) => (
+        <li key={c.id} className="p-2.5 bg-white dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+          <p className="font-semibold text-slate-900 dark:text-slate-100">{c.label}</p>
+          <p className="mt-0.5 italic">“{c.quote}”</p>
+          {c.url && (
+            <a href={c.url} target="_blank" rel="noopener noreferrer" className="underline text-teal-800 dark:text-teal-300">
+              Open the official label
+            </a>
+          )}
+        </li>
+      ))}
+    </ul>
+  </details>
+);

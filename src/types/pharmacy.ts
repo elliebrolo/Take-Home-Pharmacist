@@ -46,6 +46,8 @@ export interface VerifiedMedicationPhoto {
 
 export interface MedicationScheduleItem {
   id: string;
+  /** RxNorm concept id of the ingredient, set by the server when a pharmacist approves the record. */
+  rxcui?: string;
   /** Health Canada Drug Identification Number of the dispensed product, entered by the pharmacist. */
   din?: string;
   /** National Drug Code of the dispensed bottle (US products), entered by the pharmacist. */
@@ -111,6 +113,8 @@ export interface ConsultationRecord {
   medications: MedicationScheduleItem[];
   generalDietaryWarnings: DietaryWarning[];
   emergencyTriggers: EmergencyTrigger[];
+  /** Set by the server only: who signed this version off and when. Patients only ever receive approved records. */
+  approval?: { by: string; at: string };
 }
 
 export interface DoseLog {
@@ -146,9 +150,19 @@ export interface EmergencyTriageResult {
   hotlines: HotlineContact[];
 }
 
+export interface ChatCitation {
+  id: string;
+  label: string;
+  quote: string;
+  url?: string;
+}
+
 export interface ChatMessage {
   id: string;
-  sender: 'user' | 'pharmacist_ai' | 'system_alert';
+  /** 'pharmacist_ai' is the AI assistant; 'pharmacist' is a reply written by a person. */
+  sender: 'user' | 'pharmacist_ai' | 'pharmacist' | 'system_alert';
+  kind?: string;
+  citations?: ChatCitation[];
   text: string;
   timestamp: string;
   isEmergencyAlert?: boolean;
@@ -197,26 +211,4 @@ export interface DpdProduct {
   ingredients: Array<{ name: string; strength: string }>;
   form: string;
   status: string;
-}
-
-export interface DrugCatalogItem {
-  name: string;
-  brandName: string;
-  genericName: string;
-  drugClass: string;
-  fdaSchedule: string;
-  standardDosage: string;
-  blackBoxWarning?: string | null;
-  boxedWarningText?: string | null;
-  commonIndications: string;
-  commonSideEffects: string[];
-  foodInteractions: Array<{
-    food: string;
-    severity: 'severe' | 'moderate' | 'advisory';
-    effect: string;
-    instruction: string;
-  }>;
-  storage: string;
-  pregnancyCategory: string;
-  pillDescription: string;
 }
