@@ -5,7 +5,43 @@ import { tokens } from './sources.ts';
 export interface Block { text: string; sources: string[] }
 export interface Citation { id: string; label: string; quote: string; url?: string }
 export interface Validated { ok: true; blocks: Block[]; citations: Citation[] }
-export interface Rejected { ok: false; reasons: string[] }
+export interface Rejected { ok: false; reasons: string[]; /** The model said the sources do not answer the question. That is an abstention, not a format error. */ declined?: boolean }
+
+/**
+ * JSON Schema for the model's answer. The source ids are limited to the ones actually provided for this
+ * question (e.g. ["R1","R2","L1"]), at least one per block, so a provider that enforces the schema cannot
+ * cite an id that does not exist. The validator below is still the real check.
+ */
+export function answerSchema(sourceIds: string[]): object {
+  return {
+    type: 'object',
+    properties: {
+      can_answer: { type: 'boolean' },
+      blocks: {
+        type: 'array',
+        maxItems: 8,
+        items: {
+          type: 'object',
+          properties: {
+            text: { type: 'string', maxLength: 700 },
+            sources: { type: 'array', minItems: 1, items: { type: 'string', enum: sourceIds } },
+          },
+          required: ['text', 'sources'],
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ['can_answer', 'blocks'],
+    additionalProperties: false,
+  };
+}
+
+/** "[r2]", " R2 " and "R2" all mean R2. Nothing else is guessed: "2", "source 2" or "R9" stay as they are and fail. */
+export function canonicalSourceId(id: unknown): unknown {
+  if (typeof id !== 'string') return id;
+  const m = /^\s*\[?\s*([rl]\d{1,3})\s*\]?\s*$/i.exec(id);
+  return m ? m[1].toUpperCase() : id;
+}
 
 const norm = (s: string) => s.toLowerCase().replace(/[“”]/g, '"').replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
 
@@ -57,7 +93,8 @@ export function validateAnswer(raw: unknown, sources: Source[], record: Consulta
   const regimen = regimenWords(record);
 
   const obj = raw as any;
-  if (!obj || typeof obj !== 'object' || obj.can_answer !== true) return { ok: false, reasons: ['model declined or returned no answer'] };
+  if (obj && typeof obj === 'object' && obj.can_answer === false) return { ok: false, reasons: ['model declined: the sources do not answer the question'], declined: true };
+  if (!obj || typeof obj !== 'object' || obj.can_answer !== true) return { ok: false, reasons: ['model returned no usable answer (can_answer must be true or false)'] };
   const blocks: Block[] = Array.isArray(obj.blocks) ? obj.blocks : [];
   if (blocks.length < 1 || blocks.length > 8) return { ok: false, reasons: ['answer must have 1 to 8 blocks'] };
 
@@ -66,8 +103,10 @@ export function validateAnswer(raw: unknown, sources: Source[], record: Consulta
     const tag = `block ${i + 1}`;
     if (!b || typeof b.text !== 'string' || !b.text.trim() || b.text.length > 700) return reasons.push(`${tag}: missing or too-long text`);
     if (!Array.isArray(b.sources) || b.sources.length === 0) return reasons.push(`${tag}: no citation`);
-    const cited = b.sources.map((id: string) => byId.get(id));
-    if (cited.some((s: Source | undefined) => !s)) return reasons.push(`${tag}: cites a source that was not provided`);
+    const ids = b.sources.map(canonicalSourceId) as string[];
+    const bad = ids.filter((id) => typeof id !== 'string' || !byId.has(id));
+    if (bad.length) return reasons.push(`${tag}: cites ${bad.map((x) => `"${String(x)}"`).join(', ')}, which is not a provided source id (use only ${[...byId.keys()].join(', ')})`);
+    const cited = ids.map((id) => byId.get(id));
     const src = cited as Source[];
     const srcText = norm(src.map((s) => `${s.label} ${s.text}`).join(' '));
     const text = norm(b.text);
@@ -103,7 +142,7 @@ export function validateAnswer(raw: unknown, sources: Source[], record: Consulta
       const supported = sig.filter((t) => srcStems.has(t.slice(0, 5))).length / sig.length;
       if (supported < 0.5) reasons.push(`${tag}: only ${Math.round(supported * 100)}% of its content words appear in the cited sources`);
     }
-    clean.push({ text: b.text.trim(), sources: [...new Set<string>(b.sources)] });
+    clean.push({ text: b.text.trim(), sources: [...new Set<string>(ids)] });
   });
 
   if (reasons.length) return { ok: false, reasons };

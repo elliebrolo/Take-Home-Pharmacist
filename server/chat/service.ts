@@ -63,7 +63,7 @@ export async function handleChatTurn(deps: Deps, patientId: string, rawMessage: 
   const regimenSummary = record.medications.map((m) => `${m.medicationName} ${m.strength}`).join('; ');
   const triage = await classify({ message, history: prior, regimenSummary, llm: deps.llm });
   const actor = `patient:${patientId}`;
-  audit(deps.db, actor, 'chat.triage', undefined, { level: triage.level, signals: triage.signals });
+  audit(deps.db, actor, 'chat.triage', undefined, { level: triage.level, category: triage.category, signals: triage.signals });
 
   const reply = (kind: ChatKind, text: string, citations: Citation[] = []): ChatReply => ({
     level: triage.level,
@@ -98,7 +98,7 @@ export async function handleChatTurn(deps: Deps, patientId: string, rawMessage: 
   }
   if (out.kind === 'rejected') {
     // The rejected draft goes to the pharmacist, never to the patient.
-    queueReview(deps, patientId, 'validation_failed', message, { triage, reasons: out.reasons, draft: out.draft });
+    queueReview(deps, patientId, 'validation_failed', message, { triage, reasons: out.reasons, draft: out.draft, attempts: out.attempts });
     return reply('refused', UNSUPPORTED_TEXT(contact));
   }
   if (deps.random() < deps.auditRate) queueReview(deps, patientId, 'audit', message, { answer: out.text, citations: out.citations });

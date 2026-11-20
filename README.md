@@ -162,7 +162,7 @@ Sign in as a patient and open **Ask a question**.
 - **With a key (Gemini or OpenAI)**: try "Can I take ibuprofen with my medications?", "What is my lisinopril for?", and "When should I take the metoprolol?". Answers cite the patient's approved record (R1, R2…) or FDA label passages (L1, L2…), and appear with a source list.
 - **Emergency check**: type something like "I have chest pain and can't breathe". You get the fixed emergency message (call 911) and the item is queued as an emergency.
 - **Urgent or needs-pharmacist**: try "I took a double dose by accident". It is escalated and queued.
-- Answers that fail validation (uncited, unsupported drug names or doses, and so on) are not shown. The patient gets the forwarded message and the draft goes to the queue.
+- The model must return JSON whose source ids come from the list it was given (for example `R2`, `L1`). Answers that fail validation (uncited, unknown ids, unsupported drug names or doses, and so on) get **one automatic corrective retry** with the reasons. If the second try also fails, the patient sees a fixed message and both drafts go to the pharmacist's queue. A model that says the sources do not answer the question is not retried.
 
 ### Food check
 

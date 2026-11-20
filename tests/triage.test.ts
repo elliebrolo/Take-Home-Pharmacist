@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { classify, keywordTriage } from '../server/chat/triage.ts';
 import type { Llm } from '../server/core/deps.ts';
@@ -66,4 +66,62 @@ test('confident routine from the model with no keyword hits stays routine', asyn
 test('keyword signals record what matched', () => {
   const s = keywordTriage('I have chest pain and a rash');
   assert.deepEqual(s.map((x) => x.detail).sort(), ['chest pain', 'rash']);
+});
+
+describe('educational questions stay routine; clinical judgment, symptoms and emergencies still escalate', () => {
+  const EDUCATIONAL = [
+    'When should I take Amoxicillin-Clavulanate?',
+    'What foods should I avoid?',
+    'What side effects should I watch for?',
+    'What is my lisinopril for?',
+    'Why do I take aspirin?',
+    'Does aspirin increase bleeding risk?',
+    'Which side effects like rash or hives should I watch for?',
+    'What did my pharmacist say about taking metformin with food?',
+    'What if I miss a dose?',
+    'What are the signs of bleeding I should know about?',
+    'Which of my medicines can make me confused?',
+  ];
+  for (const q of EDUCATIONAL) {
+    test(`educational: ${q}`, async () => {
+      const k = keywordTriage(q).filter((s) => s.level !== 'routine');
+      assert.deepEqual(k, [], 'keyword net must not raise');
+      const r = await run(q, llmReturning({ level: 'routine', confidence: 0.95, reason: 'general question' }));
+      assert.equal(r.level, 'routine');
+      assert.equal(r.category, 'educational');
+    });
+  }
+
+  const ESCALATE: Array<[string, string]> = [
+    ['I have a rash', 'urgent'],
+    ['Why am I bleeding?', 'urgent'],
+    ['Does my rash look serious?', 'urgent'],
+    ['Is this bleeding normal?', 'urgent'],
+    ['I am vomiting and dizzy', 'urgent'],
+    ['I took two doses by mistake', 'urgent'],
+    ['What should I do, I have been confused since this morning', 'urgent'],
+    ['Is it safe to take this if I am pregnant?', 'urgent'],
+    ['Is this medicine safe during pregnancy?', 'needs_pharmacist'],
+    ['Should I stop taking aspirin?', 'needs_pharmacist'],
+    ['Can I skip a dose when I am traveling?', 'needs_pharmacist'],
+    ['What should I do, I have chest pain', 'emergency'],
+    ['Can you tell me what to do? I cannot breathe', 'emergency'],
+  ];
+  for (const [q, want] of ESCALATE) {
+    test(`escalates (${want}): ${q}`, async () => {
+      const r = await run(q);
+      assert.equal(r.level, want);
+      assert.notEqual(r.category, 'educational');
+    });
+  }
+
+  test('the model cannot lower an escalation the keyword net found', async () => {
+    const r = await run('I have a rash', llmReturning({ level: 'routine', confidence: 0.99, reason: 'educational' }));
+    assert.equal(r.level, 'urgent');
+  });
+  test('category follows level', async () => {
+    assert.equal((await run('Should I stop taking aspirin?')).category, 'clinical_judgment');
+    assert.equal((await run('I have a rash')).category, 'symptom');
+    assert.equal((await run('I have chest pain')).category, 'emergency');
+  });
 });

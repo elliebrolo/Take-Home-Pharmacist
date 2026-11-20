@@ -66,7 +66,7 @@ describe('grounded answers', () => {
 describe('validation: unsafe or unsupported model output never reaches the patient', () => {
   const bad: Array<[string, (u: string) => unknown, RegExp]> = [
     ['block without citation', () => ({ can_answer: true, blocks: [{ text: 'Take it in the evening.', sources: [] }] }), /no citation/],
-    ['cites a source that does not exist', () => ({ can_answer: true, blocks: [{ text: 'Take it in the evening.', sources: ['R99'] }] }), /not provided/],
+    ['cites a source that does not exist', () => ({ can_answer: true, blocks: [{ text: 'Take it in the evening.', sources: ['R99'] }] }), /not a provided source id/],
     ['names a drug outside the sources', (u) => ({ can_answer: true, blocks: [{ text: 'You can also take ibuprofen for muscle aches.', sources: [idOf(u, /Your schedule for Atorvastatin/)] }] }), /ibuprofen/],
     ['wrong medication for the cited source', (u) => ({ can_answer: true, blocks: [{ text: 'Take lisinopril once daily in the evening.', sources: [idOf(u, /Your schedule for Atorvastatin/)] }] }), /lisinopril/],
     ['dose not in the sources', (u) => ({ can_answer: true, blocks: [{ text: 'The usual dose is 80 mg once daily in the evening.', sources: [idOf(u, /Your schedule for Atorvastatin/)] }] }), /80 mg/],
@@ -267,4 +267,140 @@ test('the answer prompt forbids the behaviours the old prompt asked for', () => 
   assert.ok(!/180 to 300 words|pharmacological|Dr\. Sarah Jenkins/i.test(ANSWER_SYSTEM));
   assert.match(ANSWER_SYSTEM, /Never tell the patient to stop/);
   assert.match(ANSWER_SYSTEM, /not a pharmacist or doctor/);
+});
+
+describe('citation format: schema, normalisation and one corrective retry', () => {
+  const RETRY = /YOUR PREVIOUS ANSWER WAS REJECTED/;
+  const good = (u: string, fmt: (id: string) => string = (x) => x) => ({
+    can_answer: true,
+    blocks: [{ text: 'Your schedule says to take 1 tablet once daily in the evening.', sources: [fmt(idOf(u, /Your schedule for Atorvastatin/))] }],
+  });
+
+  test('the model is given a schema that only allows the ids that were provided', async () => {
+    const seen: any[] = [];
+    const s = scriptedLlm({ triage: ROUTINE, answer: (u) => good(u) });
+    const wrapped = { generateJson: async (a: any) => { if (!a.system.startsWith('You triage')) seen.push(a); return s.llm.generateJson(a); } };
+    const t = await startTestServer({ llm: wrapped, knowledge: knowledgeWithLabels() });
+    try {
+      const r = await ask(t, await t.login('patient', CHEN), 'When do I take atorvastatin?');
+      assert.equal(r.json.kind, 'answer');
+      const items = seen[0].schema.properties.blocks.items.properties.sources;
+      assert.equal(items.minItems, 1);
+      assert.ok(items.items.enum.includes('R1') && items.items.enum.some((i: string) => i.startsWith('L')));
+      assert.ok(!items.items.enum.includes('R99'));
+      assert.match(seen[0].system, /exact source id/);
+    } finally { t.close(); }
+  });
+
+  test('"[r2]" style ids are read as the id they name; it still needs to be a provided id', async () => {
+    const t = await startTestServer({ llm: scriptedLlm({ triage: ROUTINE, answer: (u) => good(u, (id) => `[${id.toLowerCase()}]`) }).llm, knowledge: knowledgeWithLabels() });
+    try {
+      const r = await ask(t, await t.login('patient', CHEN), 'When do I take atorvastatin?');
+      assert.equal(r.json.kind, 'answer');
+      assert.ok(r.json.citations.every((c: any) => /^[RL]\d+$/.test(c.id)));
+    } finally { t.close(); }
+  });
+
+  test('a bad id on the first try gets one corrective retry that lists the valid ids, and a fixed answer is shown', async () => {
+    let n = 0;
+    const s = scriptedLlm({
+      triage: ROUTINE,
+      answer: (u) => {
+        n++;
+        if (n === 1) return good(u, () => 'Source 2');
+        assert.match(u, RETRY);
+        assert.match(u, /not a provided source id/);
+        assert.match(u, /Cite only these ids: R1/);
+        return good(u);
+      },
+    });
+    const t = await startTestServer({ llm: s.llm, knowledge: knowledgeWithLabels() });
+    try {
+      const r = await ask(t, await t.login('patient', CHEN), 'When do I take atorvastatin?');
+      assert.equal(r.json.kind, 'answer');
+      assert.match(r.json.citations[0].id, /^R\d+$/);
+      assert.equal(s.calls.filter((c) => c.kind === 'answer').length, 2);
+      assert.equal(reviewItems(t).length, 0);
+    } finally { t.close(); }
+  });
+
+  test('two failures escalate to the pharmacist, with both attempts recorded, and the patient sees only the fixed text', async () => {
+    const s = scriptedLlm({ triage: ROUTINE, answer: () => ({ can_answer: true, blocks: [{ text: 'Take it in the evening.', sources: ['R99'] }] }) });
+    const t = await startTestServer({ llm: s.llm, knowledge: knowledgeWithLabels() });
+    try {
+      const r = await ask(t, await t.login('patient', CHEN), 'When do I take atorvastatin?');
+      assert.equal(r.json.kind, 'refused');
+      assert.doesNotMatch(r.json.text, /evening/);
+      assert.equal(s.calls.filter((c) => c.kind === 'answer').length, 2, 'exactly one retry');
+      const item = reviewItems(t).find((i) => i.reason === 'validation_failed');
+      assert.ok(item);
+      assert.equal(JSON.parse(item.detail).attempts.length, 2);
+    } finally { t.close(); }
+  });
+
+  test('safety checks still apply to the retry: a fixed citation does not excuse an unsupported instruction', async () => {
+    let n = 0;
+    const s = scriptedLlm({
+      triage: ROUTINE,
+      answer: (u) => (++n === 1
+        ? { can_answer: true, blocks: [{ text: 'Take it in the evening.', sources: [] }] }
+        : { can_answer: true, blocks: [{ text: 'You should stop taking it right away.', sources: [idOf(u, /Your schedule for Atorvastatin/)] }] }),
+    });
+    const t = await startTestServer({ llm: s.llm, knowledge: knowledgeWithLabels() });
+    try {
+      const r = await ask(t, await t.login('patient', CHEN), 'When do I take atorvastatin?');
+      assert.equal(r.json.kind, 'refused');
+      assert.equal(n, 2);
+    } finally { t.close(); }
+  });
+
+  test('a model that says the sources do not answer is not retried', async () => {
+    const s = scriptedLlm({ triage: ROUTINE, answer: () => ({ can_answer: false, blocks: [] }) });
+    const t = await startTestServer({ llm: s.llm, knowledge: knowledgeWithLabels() });
+    try {
+      const r = await ask(t, await t.login('patient', CHEN), 'When do I take atorvastatin?');
+      assert.equal(r.json.kind, 'refused');
+      assert.equal(s.calls.filter((c) => c.kind === 'answer').length, 1);
+    } finally { t.close(); }
+  });
+
+  test('a model outage is not retried', async () => {
+    let n = 0;
+    const llm = { generateJson: async (a: any) => { if (a.system.startsWith('You triage')) return JSON.stringify(ROUTINE()); n++; throw new Error('down'); } };
+    const t = await startTestServer({ llm, knowledge: knowledgeWithLabels() });
+    try {
+      const r = await ask(t, await t.login('patient', CHEN), 'When do I take atorvastatin?');
+      assert.equal(r.json.kind, 'fallback');
+      assert.equal(n, 1);
+    } finally { t.close(); }
+  });
+});
+
+describe('routine medication questions come back cited', () => {
+  const llm = scriptedLlm({
+    triage: ROUTINE,
+    answer: (u) => {
+      const q = u.split('PATIENT QUESTION')[1];
+      if (/grapefruit/i.test(q)) return { can_answer: true, blocks: [{ text: 'The label says excessive amounts of grapefruit juice can raise atorvastatin levels.', sources: [idOf(u, /Atorvastatin label/)] }] };
+      return { can_answer: true, blocks: [{ text: 'Your schedule says to take 1 tablet once daily in the evening.', sources: [idOf(u, /Your schedule for Atorvastatin/)] }] };
+    },
+  });
+  let t: Awaited<ReturnType<typeof startTestServer>>;
+  test('setup', async () => { t = await startTestServer({ llm: llm.llm, knowledge: knowledgeWithLabels() }); });
+  after(() => t?.close());
+
+  for (const [q, cite] of [
+    ['When should I take atorvastatin?', /^R\d+$/],
+    ['What does my schedule say about atorvastatin?', /^R\d+$/],
+    ['Can I have grapefruit juice with atorvastatin?', /^L\d+$/],
+  ] as Array<[string, RegExp]>) {
+    test(q, async () => {
+      const r = await ask(t, await t.login('patient', CHEN), q);
+      assert.equal(r.json.kind, 'answer', r.text);
+      assert.equal(r.json.level, 'routine');
+      assert.ok(r.json.citations.length >= 1);
+      assert.ok(r.json.citations.every((c: any) => /^[RL]\d+$/.test(c.id) && c.quote));
+      assert.ok(r.json.citations.some((c: any) => cite.test(c.id)));
+    });
+  }
 });
