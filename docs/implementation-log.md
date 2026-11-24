@@ -93,7 +93,7 @@ Objective: prepare the app for Cloud Run and eventual iOS distribution, using sy
 2. **Single-use, hash-stored access codes in the URL fragment**, default 72 hours, patient sessions 24 hours. Chosen over multi-use codes to limit the damage of a lost printout; the cost is that a patient who signs out needs a new code.
 3. **Bearer tokens only for clients that ask (`client: "native"`)**; the web app keeps SameSite cookies and never receives the token in the response body.
 4. **Reminders never guess times.** A medicine taken more than once a day has one stored time, so it gets no reminder and the patient is told. Notification text is generic because it shows on a locked screen.
-5. **npm lockfile added alongside `bun.lock`**, because `CLAUDE.md` names `npm install` as the standard and the Docker/CI builds use `npm ci`. Two lockfiles can drift; run both installs after changing dependencies.
+5. **npm lockfile added alongside `bun.lock`**, because `CLAUDE.md` names `npm install` as the standard and the Docker/CI builds use `npm ci`. Two lockfiles can drift; run both installs after changing dependencies. **Regenerate `package-lock.json` with npm 11** (the version in Node 24 and the CI/Docker images): `npx npm@11 install --package-lock-only`. A lockfile made by npm 10 lacked platform-specific optional packages that npm 11's `npm ci` requires, and failed CI (run 3).
 6. **Production CSP allows `style-src 'unsafe-inline'`** (the UI uses inline styles) and Google Fonts and DailyMed images; scripts are `'self'` only.
 7. **Capacitor 8** (current major) rather than 7.
 
