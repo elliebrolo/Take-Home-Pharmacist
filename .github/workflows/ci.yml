@@ -15,7 +15,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: npm install --no-audit --no-fund
+      # The project is locked with bun.lock. `npm install` fails on a peer-dependency conflict
+      # (esbuild ^0.25 in package.json vs vite's ^0.27 || ^0.28), so install with bun and run the scripts with npm.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - run: bun install --frozen-lockfile
       - name: Type check
         run: npm run lint
       - name: Tests
