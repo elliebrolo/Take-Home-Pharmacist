@@ -45,8 +45,8 @@ export const ROUTINE = () => ({ level: 'routine', confidence: 0.95, reason: 'gen
 /** Find the id the prompt assigned to a source, e.g. id(user, /Your schedule for Atorvastatin/) -> "R2" */
 export const idOf = (user: string, re: RegExp) => new RegExp(`\\[([RL]\\d+)\\] \\(${re.source}`).exec(user)![1];
 
-export async function startTestServer(over: { llm?: Llm | null; knowledge?: Knowledge; auditRate?: number } = {}) {
-  const auth = loadAuthConfig({ SESSION_SECRET: 'test-secret', PHARMACIST_PASSCODE: 'pw-test', PATIENT_CODES: 'PT-9410:santos-code' } as any);
+export async function startTestServer(over: { llm?: Llm | null; knowledge?: Knowledge; auditRate?: number; env?: Record<string, string> } = {}) {
+  const auth = loadAuthConfig({ SESSION_SECRET: 'test-secret', PHARMACIST_PASSCODE: 'pw-test', PATIENT_CODES: 'PT-9410:santos-code', ...over.env } as any);
   const deps: Deps = {
     db: openDb(':memory:'),
     auth,
@@ -62,10 +62,10 @@ export async function startTestServer(over: { llm?: Llm | null; knowledge?: Know
     const s = app.listen(0, '127.0.0.1', () => r(s));
   });
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  async function call(method: string, path: string, body?: unknown, cookie?: string) {
+  async function call(method: string, path: string, body?: unknown, cookie?: string, headers: Record<string, string> = {}) {
     const res = await fetch(base + path, {
       method,
-      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();

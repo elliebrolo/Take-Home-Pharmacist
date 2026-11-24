@@ -21,10 +21,9 @@ import express, { Express, NextFunction, Request, Response } from 'express';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { dataPaths } from './core/paths.ts';
 
-const DATA_DIR = path.resolve(process.cwd(), 'data');
-const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
-const NLM_DIR = path.join(DATA_DIR, 'nlm');
+const { uploadDir: UPLOAD_DIR, nlmDir: NLM_DIR } = dataPaths();
 const NLM_IMAGE_DIR = path.join(NLM_DIR, 'images');
 
 // ---------- shared helpers ----------

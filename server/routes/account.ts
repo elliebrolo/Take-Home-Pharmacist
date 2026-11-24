@@ -2,7 +2,7 @@ import express from 'express';
 import type { Deps } from '../core/deps.ts';
 import { audit } from '../core/db.ts';
 import { ConsultationStore, HttpError, validateConsultation } from '../core/consultations.ts';
-import { clearSessionCookie, issueToken, rateLimit, requireRole, safeEqual, setSessionCookie } from '../core/auth.ts';
+import { clearSessionCookie, rateLimit, requireRole, safeEqual, startSession } from '../core/auth.ts';
 
 const wrap = (fn: express.RequestHandler): express.RequestHandler => async (req, res, next) => {
   try {
@@ -23,25 +23,28 @@ export function registerAccountRoutes(app: express.Express, deps: Deps, store: C
     res.json({ session: req.session ? { role: req.session.role, sub: req.session.sub } : null });
   });
 
-  // Which demo patients can sign in (names only; no clinical data).
+  // Which demo patients can sign in (names only; no clinical data). Only in demo mode: a deployment with real
+  // patients must never publish a list of who is registered.
   app.get('/api/auth/patients', (_req, res) => {
+    if (!auth.demoMode) return res.json({ patients: [], demoMode: false });
     const rows = db.prepare("SELECT DISTINCT patient_id, body FROM consultations WHERE status='approved'").all() as any[];
     res.json({
+      demoMode: true,
       patients: rows.map((r) => ({ patientId: r.patient_id, name: JSON.parse(r.body).patientName as string, needsCode: !!auth.patientCodes[r.patient_id] || !auth.allowOpenDemoPatients })),
     });
   });
 
   app.post('/api/auth/login', loginLimit, (req, res) => {
-    const { role, patientId, code, passcode, name } = req.body || {};
+    const { role, patientId, code, passcode, name, client } = req.body || {};
     if (role === 'pharmacist') {
       if (typeof passcode !== 'string' || !safeEqual(passcode, auth.pharmacistPasscode)) {
         audit(db, 'anon', 'login.failed', 'pharmacist');
         return res.status(401).json({ error: 'Incorrect passcode.' });
       }
       const sub = typeof name === 'string' && name.trim() ? name.trim().slice(0, 80) : 'Pharmacist';
-      setSessionCookie(auth, res, issueToken(auth, { role: 'pharmacist', sub }));
+      const body = startSession(auth, res, { role: 'pharmacist', sub }, client);
       audit(db, `pharmacist:${sub}`, 'login');
-      return res.json({ session: { role: 'pharmacist', sub } });
+      return res.json(body);
     }
     if (role === 'patient') {
       if (typeof patientId !== 'string' || !store.approvedFor(patientId)) return res.status(401).json({ error: 'Unknown patient or incorrect code.' });
@@ -51,9 +54,9 @@ export function registerAccountRoutes(app: express.Express, deps: Deps, store: C
         audit(db, 'anon', 'login.failed', `patient:${patientId}`);
         return res.status(401).json({ error: 'Unknown patient or incorrect code.' });
       }
-      setSessionCookie(auth, res, issueToken(auth, { role: 'patient', sub: patientId }));
+      const body = startSession(auth, res, { role: 'patient', sub: patientId }, client);
       audit(db, `patient:${patientId}`, 'login');
-      return res.json({ session: { role: 'patient', sub: patientId } });
+      return res.json(body);
     }
     res.status(400).json({ error: 'Choose patient or pharmacist.' });
   });
