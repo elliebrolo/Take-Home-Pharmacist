@@ -34,6 +34,8 @@ Edit `.env`. Every value below is optional in development:
 | `SESSION_SECRET` | Signs session cookies. Required in production. |
 | `PATIENT_CODES` | Optional per-patient codes, for example `PT-8821:code1,PT-9410:code2`. Patients without a code can sign in without one only outside production. |
 | `AUDIT_RATE` | Share of validated answers sent to the pharmacist for audit (default `0.2`). |
+| `URGENT_WEBHOOK_URL` | Optional https webhook (Slack-style) told when an emergency or urgent item is queued. The message holds only the item number and reason, never patient names or text. See [Urgent-item notifications](#urgent-item-notifications). |
+| `LABEL_REFRESH_HOURS` | Hours between automatic re-reads of cached FDA labels (default `24`, `0` turns it off). Changed label text is flagged in the review queue. |
 | `DB_FILE` | SQLite file (default `data/app.db`). |
 | `PORT` | Server port (default `3000`). |
 
@@ -194,24 +196,37 @@ In **Food check**, enter "grapefruit". The result is always "caution" or "not ch
 ### Automated tests
 
 ```bash
-npm test                 # about 100 tests, run in about a second, using scripted fake models (including a fake OpenAI endpoint) and fake label data
+npm test                 # about 250 tests, run in a few seconds, using scripted fake models (including a fake OpenAI endpoint) and fake label data
+npm run eval             # the release gate only: emergency, grounding and out-of-scope cases (also part of npm test)
 RUN_LIVE=1 npm test      # also runs the live RxNorm/DailyMed test (needs internet)
 npm run lint
 ```
 
-The tests cover sign-in and access control, consultation approval, triage, label parsing, answer validation, the review queue, provider selection, and the full pipeline on the OpenAI adapter. They never call a real provider. Passing tests are **not** evidence of clinical safety.
+The tests cover sign-in and access control, consultation approval, triage, label parsing and change detection, answer validation, the review queue, urgent-item notifications, provider selection, and the full pipeline on the OpenAI adapter. They never call a real provider. Passing tests are **not** evidence of clinical safety.
+
+**Release gate.** `npm run eval` (run by CI on every push, see `.github/workflows/ci.yml`) must pass before any change to a prompt, model name, keyword list or validator ships. It requires: every case in `tests/eval/triage-cases.ts` reaches `emergency` from the keyword net alone and still does when the model is wrong or down; no demo patient receives an answer naming another patient's drug; delivered answers cite sources; out-of-scope questions are refused, not guessed. The cases were written by a developer and have **not** been reviewed by a clinician or checked by native speakers. To grow the set, add cases to that file, and export items a pharmacist flagged "wrong" or "unsafe" from `GET /api/review-items-flagged`.
+
+### Urgent-item notifications
+
+By default a pharmacist sees urgent items only while the workspace is open (the queue refreshes every 30 seconds and plays an alert tone when a new emergency or urgent item arrives). To be told elsewhere, set `URGENT_WEBHOOK_URL` to an https incoming webhook. Each emergency or urgent item sends one best-effort message such as "POSSIBLE EMERGENCY item #12 is waiting in the review queue". It contains no patient name, id or message text, so the destination is not treated as holding patient data. A failed delivery never affects the patient and is recorded in the audit log (`notify.failed`). A real deployment needs a monitored on-call path with acknowledgement, not just a webhook.
+
+### Drug label changes
+
+A background job (and the pharmacist-only `POST /api/drug-labels/refresh`) re-reads each cached FDA label from the same DailyMed set. If any section's text changed, or the source label had to be replaced, every patient whose approved plan includes that drug gets a **Drug label changed** item in the review queue. Nothing in a patient's plan changes automatically; the pharmacist decides.
 
 ## Known limitations
 
 - **Prototype sign-in only.** A shared pharmacist passcode and an optional per-patient code. A real deployment needs a real identity provider. There is no encryption at rest, no HIPAA/PHIPA review, and no production audit trail.
 - **No clinical validation.** The fixed emergency text, hotline numbers (US Poison Control and 988 are US services), the triage keyword lists, and the demo patients' clinical content all need clinical sign-off and Canadian review.
 - **Validation is lexical.** The answer validator checks citations, drug names, doses and directive wording against the cited text. It cannot judge meaning.
-- **Label knowledge is limited.** One US FDA label per drug (DailyMed), refreshed weekly on use. No structured drug-drug interaction database and no job that flags label changes.
+- **Label knowledge is limited.** One US FDA label per drug (DailyMed), refreshed daily by the background job. Changes are detected by comparing section text, so a wording-only edit is flagged the same as a safety change. No structured drug-drug interaction database.
 - **Real providers not exercised.** Neither the Gemini nor the OpenAI path has been run against the live API from this repo, only against fakes. The default model names (`gemini-3.8-flash`, `gpt-5.4-mini`) are unverified. The transcript JSON schema is enforced by Gemini but only requested from OpenAI (non-strict), so the server checks the output shape and the pharmacist reviews every draft.
 - **Images.** NLM photos are US products from 2009–2016 and may not look like the Canadian product. They are reference photos only. DailyMed redisplay terms are unconfirmed.
-- **No push notifications** for urgent queue items. The pharmacist must open the workspace.
+- **Notifications are a basic webhook** (optional). There is no acknowledgement, escalation or on-call schedule.
 - **Experimental SQLite.** `node:sqlite` prints an experimental warning on Node 24.
 - UI tests are not included in the repo.
+- **Keyword net is not a translation service.** Non-English phrases were written by a developer and are unreviewed. Text in scripts the list cannot read (for example Arabic, Hindi) is never cleared as routine without the model, but the list cannot recognise an emergency in them.
+- **Baseline security headers only.** No Content-Security-Policy, no `trust proxy` setting (the sign-in limit is keyed by IP, so behind a reverse proxy configure Express accordingly).
 
 ## Troubleshooting
 

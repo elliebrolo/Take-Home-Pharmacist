@@ -102,3 +102,16 @@ test('every approval and login is written to the audit log', () => {
   const rows = t.deps.db.prepare("SELECT action FROM audit_log").all().map((r: any) => r.action);
   assert.ok(rows.includes('login') && rows.includes('consultation.approve') && rows.includes('login.failed'));
 });
+
+test('responses carry baseline security headers and API responses are not cacheable', async () => {
+  const { startTestServer } = await import('./helpers.ts');
+  const t = await startTestServer();
+  try {
+    const r = await t.call('GET', '/api/auth/me');
+    assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(r.headers.get('x-frame-options'), 'DENY');
+    assert.equal(r.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+    assert.equal(r.headers.get('x-powered-by'), null);
+  } finally { t.close(); }
+});

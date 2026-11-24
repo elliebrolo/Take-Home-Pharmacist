@@ -71,7 +71,7 @@ export async function startTestServer(over: { llm?: Llm | null; knowledge?: Know
     const text = await res.text();
     let json: any = null;
     try { json = JSON.parse(text); } catch {}
-    return { status: res.status, json, text, cookie: res.headers.get('set-cookie')?.split(';')[0] };
+    return { status: res.status, headers: res.headers, json, text, cookie: res.headers.get('set-cookie')?.split(';')[0] };
   }
   const sessions = new Map<string, string>(); // the login limiter is real, so reuse sessions
   async function login(role: 'patient' | 'pharmacist', patientId?: string, extra: object = {}) {
