@@ -1,6 +1,7 @@
 import type { Db } from '../core/db.ts';
 import type { Knowledge, LabelPassage } from '../core/deps.ts';
 import { chunkText, parseSpl } from './spl.ts';
+import { diffSections, recordLabelChange, type LabelSnapshot } from './changes.ts';
 
 export class KnowledgeUnavailable extends Error {}
 
@@ -44,30 +45,58 @@ export class LabelKnowledge implements Knowledge {
     return id;
   }
 
-  async ensureLabel(rxcui: string, nameHint: string): Promise<boolean> {
-    const row = this.db.prepare('SELECT fetched_at FROM drug_labels WHERE rxcui=?').get(rxcui) as any;
-    if (row && Date.now() - Date.parse(row.fetched_at) < LABEL_TTL_MS) return true;
-
-    // Prefer the id match; fall back to the drug name. Skip repackager/kit noise by taking the first plain Rx tablet/capsule/solution title.
-    let list: any[] = (await getJson(this.f, `${DAILYMED}/spls.json?rxcui=${encodeURIComponent(rxcui)}&pagesize=10`))?.data ?? [];
-    if (!list.length && nameHint) {
-      list = (await getJson(this.f, `${DAILYMED}/spls.json?drug_name=${encodeURIComponent(nameHint)}&pagesize=10`))?.data ?? [];
+  /** Stored label for a drug, grouped by section, or null when none is cached. */
+  private snapshot(rxcui: string): (LabelSnapshot & { title: string }) | null {
+    const row = this.db.prepare('SELECT set_id, title, version FROM drug_labels WHERE rxcui=?').get(rxcui) as any;
+    if (!row) return null;
+    const sections = new Map<string, string>();
+    for (const p of this.db.prepare('SELECT section, text FROM label_passages WHERE rxcui=? ORDER BY id').all(rxcui) as any[]) {
+      sections.set(p.section, `${sections.get(p.section) ?? ''} ${p.text}`.trim());
     }
-    const pick = list.find((x) => !/\bKIT\b/i.test(x.title)) ?? list[0];
-    if (!pick) return !!row;
+    return { setId: row.set_id, title: row.title, version: row.version ?? null, sections };
+  }
 
-    let xml: string;
-    try {
-      const r = await this.f(`${DAILYMED}/spls/${pick.setid}.xml`, { signal: AbortSignal.timeout(30_000) });
-      if (!r.ok) throw new Error(String(r.status));
-      xml = await r.text();
-    } catch {
-      return !!row; // keep serving the previous copy if there is one
+  /**
+   * Make sure a label is cached and reasonably fresh. `force` re-pulls it now.
+   * On a refresh, the SAME label (set id) is re-read so a different manufacturer's label is not swapped in by accident.
+   * If the text of any section changed, or the source label had to be replaced, the change is recorded and the
+   * pharmacist of every patient on that drug gets a review item (see changes.ts).
+   */
+  async ensureLabel(rxcui: string, nameHint: string, opts: { force?: boolean } = {}): Promise<boolean> {
+    const row = this.db.prepare('SELECT fetched_at FROM drug_labels WHERE rxcui=?').get(rxcui) as any;
+    if (!opts.force && row && Date.now() - Date.parse(row.fetched_at) < LABEL_TTL_MS) return true;
+    const before = this.snapshot(rxcui);
+
+    const fetchXml = async (setid: string): Promise<string | null> => {
+      try {
+        const r = await this.f(`${DAILYMED}/spls/${setid}.xml`, { signal: AbortSignal.timeout(30_000) });
+        return r.ok ? await r.text() : null;
+      } catch {
+        return null;
+      }
+    };
+
+    let pick: { setid: string; title: string } | undefined;
+    let xml: string | null = null;
+    if (before) {
+      xml = await fetchXml(before.setId);
+      if (xml) pick = { setid: before.setId, title: before.title };
+    }
+    if (!xml) {
+      // Prefer the id match; fall back to the drug name. Skip repackager/kit noise by taking the first plain Rx tablet/capsule/solution title.
+      let list: any[] = (await getJson(this.f, `${DAILYMED}/spls.json?rxcui=${encodeURIComponent(rxcui)}&pagesize=10`))?.data ?? [];
+      if (!list.length && nameHint) {
+        list = (await getJson(this.f, `${DAILYMED}/spls.json?drug_name=${encodeURIComponent(nameHint)}&pagesize=10`))?.data ?? [];
+      }
+      pick = list.find((x) => !/\bKIT\b/i.test(x.title)) ?? list[0];
+      if (!pick) return !!row;
+      xml = await fetchXml(pick.setid);
+      if (!xml) return !!row; // keep serving the previous copy if there is one
     }
     const parsed = parseSpl(xml);
     if (!parsed.sections.length) return !!row;
 
-    const url = `https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=${pick.setid}`;
+    const url = `https://dailymed.nlm.nih.gov/dailymed/lookup.cfm?setid=${pick!.setid}`;
     this.db.exec('BEGIN');
     try {
       this.db.prepare('DELETE FROM label_passages WHERE rxcui=?').run(rxcui);
@@ -75,17 +104,41 @@ export class LabelKnowledge implements Knowledge {
       for (const s of parsed.sections) {
         chunkText(s.text)
           .slice(0, MAX_PASSAGES_PER_SECTION)
-          .forEach((t, i) => ins.run(`${pick.setid}#${s.code}#${i + 1}`, rxcui, s.section, s.code, t));
+          .forEach((t, i) => ins.run(`${pick!.setid}#${s.code}#${i + 1}`, rxcui, s.section, s.code, t));
       }
       this.db
         .prepare('INSERT OR REPLACE INTO drug_labels (rxcui, name, set_id, title, version, effective, url, fetched_at) VALUES (?,?,?,?,?,?,?,?)')
-        .run(rxcui, nameHint, pick.setid, pick.title, parsed.version, parsed.effective, url, new Date().toISOString());
+        .run(rxcui, nameHint, pick!.setid, pick!.title, parsed.version, parsed.effective, url, new Date().toISOString());
       this.db.exec('COMMIT');
     } catch (e) {
       this.db.exec('ROLLBACK');
       throw e;
     }
+
+    if (before) {
+      const after = this.snapshot(rxcui)!;
+      const changedSections = diffSections(before.sections, after.sections);
+      if (after.setId !== before.setId || changedSections.length) {
+        recordLabelChange(this.db, { rxcui, name: nameHint, before, after, url, changedSections });
+      }
+    }
     return true;
+  }
+
+  /** Scheduled job: re-pull every cached label and flag the ones whose text changed. One failure does not stop the rest. */
+  async refreshKnownLabels(): Promise<{ checked: number; changed: number; failed: number }> {
+    const rows = this.db.prepare('SELECT rxcui, name FROM drug_labels').all() as any[];
+    const changesBefore = (this.db.prepare('SELECT COUNT(*) n FROM label_changes').get() as any).n as number;
+    let failed = 0;
+    for (const r of rows) {
+      try {
+        await this.ensureLabel(r.rxcui, r.name, { force: true });
+      } catch {
+        failed++;
+      }
+    }
+    const changed = ((this.db.prepare('SELECT COUNT(*) n FROM label_changes').get() as any).n as number) - changesBefore;
+    return { checked: rows.length, changed, failed };
   }
 
   passagesFor(rxcuis: string[]): LabelPassage[] {

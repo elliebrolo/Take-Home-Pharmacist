@@ -81,5 +81,5 @@ export async function startTestServer(over: { llm?: Llm | null; knowledge?: Know
     sessions.set(key, r.cookie!);
     return r.cookie!;
   }
-  return { deps, store, call, login, close: () => server.close() };
+  return { app, deps, store, call, login, close: () => server.close() };
 }

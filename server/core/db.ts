@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_chat_patient ON chat_messages(patient_id, id);
 CREATE TABLE IF NOT EXISTS review_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   patient_id TEXT NOT NULL,
-  reason TEXT NOT NULL,               -- emergency | urgent | needs_pharmacist | validation_failed | llm_unavailable | audit
+  reason TEXT NOT NULL,               -- emergency | urgent | needs_pharmacist | validation_failed | llm_unavailable | audit | label_changed
   priority INTEGER NOT NULL,          -- 1 = highest
   question TEXT NOT NULL,
   detail TEXT,                        -- JSON: triage result, rejected draft, validator findings
@@ -76,6 +76,17 @@ CREATE TABLE IF NOT EXISTS label_passages (
   text TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_passage_rxcui ON label_passages(rxcui);
+CREATE TABLE IF NOT EXISTS label_changes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  rxcui TEXT NOT NULL,
+  name TEXT NOT NULL,
+  old_set_id TEXT,
+  new_set_id TEXT,
+  old_version TEXT,
+  new_version TEXT,
+  changed_sections TEXT NOT NULL,     -- JSON array of section names whose text differs
+  detected_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS rxnorm_cache (
   query TEXT PRIMARY KEY,
   rxcui TEXT,                         -- NULL = looked up, not found

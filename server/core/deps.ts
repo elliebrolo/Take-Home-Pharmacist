@@ -31,6 +31,8 @@ export interface Knowledge {
   /** Make sure label passages for this RxCUI are cached; returns false if no label could be fetched. */
   ensureLabel(rxcui: string, nameHint: string): Promise<boolean>;
   passagesFor(rxcuis: string[]): LabelPassage[];
+  /** Re-pull every cached label now, flag changed ones for the affected patients' pharmacists. Absent in test fakes. */
+  refreshKnownLabels?(): Promise<{ checked: number; changed: number; failed: number }>;
 }
 
 /** A JSON-returning language model call. Real impl: Gemini. Tests inject a fake. */

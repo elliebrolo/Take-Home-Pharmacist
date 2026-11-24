@@ -18,6 +18,7 @@ const REASON: Record<string, { label: string; tone: string }> = {
   validation_failed: { label: 'Answer blocked by checks', tone: 'bg-slate-100 text-slate-900 border-slate-300' },
   llm_unavailable: { label: 'Could not answer', tone: 'bg-slate-100 text-slate-900 border-slate-300' },
   audit: { label: 'Spot check', tone: 'bg-blue-50 text-blue-900 border-blue-200' },
+  label_changed: { label: 'Drug label changed', tone: 'bg-violet-50 text-violet-900 border-violet-200' },
 };
 
 /** Pharmacist inbox: everything the assistant escalated, refused, or sampled for review. */
@@ -82,14 +83,28 @@ export const ReviewQueue: React.FC = () => {
                 <span className="font-semibold text-slate-900 dark:text-slate-100">{it.patientName}</span>
                 <span className="text-slate-500">{new Date(it.createdAt).toLocaleString()}</span>
               </div>
-              <p className="text-base text-slate-900 dark:text-slate-100">“{it.question}”</p>
+              <p className="text-base text-slate-900 dark:text-slate-100">{it.reason === 'label_changed' ? it.question : `“${it.question}”`}</p>
               {reasons && (
                 <p className="text-sm text-slate-600 dark:text-slate-300 flex gap-1.5">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" /> Blocked because: {reasons.join('; ')}
                 </p>
               )}
               {it.detail?.answer && <p className="text-sm text-slate-600 dark:text-slate-300">Assistant answered: {it.detail.answer}</p>}
-              {it.reason === 'audit' ? (
+              {it.reason === 'label_changed' ? (
+                <div className="space-y-2">
+                  {it.detail?.changedSections?.length > 0 && (
+                    <p className="text-sm text-slate-600 dark:text-slate-300">Sections that changed: {it.detail.changedSections.join(', ')}</p>
+                  )}
+                  {it.detail?.url && (
+                    <a href={it.detail.url} target="_blank" rel="noopener noreferrer" className="text-sm font-semibold text-teal-800 underline">Open the label on DailyMed</a>
+                  )}
+                  <div>
+                    <button type="button" disabled={busy === it.id} onClick={() => act(it.id, 'resolve', {})} className="min-h-11 px-3 border border-slate-300 dark:border-slate-600 rounded-lg text-sm font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-4 h-4" aria-hidden="true" /> Mark reviewed
+                    </button>
+                  </div>
+                </div>
+              ) : it.reason === 'audit' ? (
                 <div className="flex flex-wrap gap-2">
                   {(['ok', 'wrong', 'unsafe'] as const).map((flag) => (
                     <button key={flag} type="button" disabled={busy === it.id} onClick={() => act(it.id, 'resolve', { flag })} className="min-h-11 px-3 rounded-lg border border-slate-300 dark:border-slate-600 text-sm font-semibold">

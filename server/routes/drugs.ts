@@ -1,6 +1,7 @@
 import express from 'express';
 import type { Deps } from '../core/deps.ts';
 import { requireRole } from '../core/auth.ts';
+import { audit } from '../core/db.ts';
 import { KnowledgeUnavailable } from '../knowledge/store.ts';
 
 /**
@@ -29,6 +30,23 @@ export function registerDrugRoutes(app: express.Express, deps: Deps) {
     } catch (e) {
       const status = e instanceof KnowledgeUnavailable ? 503 : 500;
       res.status(status).json({ error: status === 503 ? `${(e as Error).message} Try again shortly.` : 'Lookup failed.' });
+    }
+  });
+
+  // Re-pull every cached label now and flag changes. The same job runs on a schedule (see server.ts).
+  let refreshing = false;
+  app.post('/api/drug-labels/refresh', requireRole('pharmacist'), async (req, res) => {
+    if (!deps.knowledge.refreshKnownLabels) return res.status(501).json({ error: 'Label refresh is not available.' });
+    if (refreshing) return res.status(409).json({ error: 'A refresh is already running.' });
+    refreshing = true;
+    try {
+      const summary = await deps.knowledge.refreshKnownLabels();
+      audit(deps.db, `pharmacist:${req.session!.sub}`, 'labels.refresh', undefined, summary);
+      res.json(summary);
+    } catch {
+      res.status(500).json({ error: 'Refresh failed.' });
+    } finally {
+      refreshing = false;
     }
   });
 }

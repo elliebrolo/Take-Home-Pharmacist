@@ -34,6 +34,18 @@ const { app, store } = createApp(deps);
 store.seedApproved(DEFAULT_CONSULTATIONS); // fictional demo patients, marked "Demo data (not reviewed)"
 
 registerTranscriptRoute(app, deps);
+
+// Weekly-at-most label refresh that flags changed FDA label text for the pharmacist (plan phase 2).
+// LABEL_REFRESH_HOURS=0 turns it off. It only re-reads labels already cached; it sends no patient data.
+const refreshHours = Number(process.env.LABEL_REFRESH_HOURS ?? 24);
+if (refreshHours > 0 && deps.knowledge.refreshKnownLabels) {
+  const job = () =>
+    deps.knowledge.refreshKnownLabels!().then(
+      (r) => r.changed && console.log(`Label refresh: ${r.changed} changed label(s) flagged in the review queue.`),
+      (e) => console.error('Label refresh failed:', e?.message || e),
+    );
+  setInterval(job, refreshHours * 60 * 60 * 1000).unref();
+}
 registerDrugRoutes(app, deps);
 
 // Medication photos: only pharmacists may search for, look up or upload; signed-in users may view stored images.
