@@ -23,6 +23,32 @@ Health checks: `GET /healthz` (process is up) and `GET /readyz` (database readab
 3. **Going public.** A new Cloud Run service is private. Patients and the iOS app need it publicly callable. That is step 9, after you have checked staging.
 4. **Which model and key** (or none).
 
+## Fast path (recommended): one script in Cloud Shell
+
+Open [Cloud Shell](https://shell.cloud.google.com) (it is already signed in to your account), clone the repository, check out this branch, and run:
+
+```bash
+git clone https://github.com/elliebrolo/Take-Home-Pharmacist && cd Take-Home-Pharmacist
+git checkout claude/festive-shannon-52jcx5
+PROJECT_ID=your-project-id ./deploy/deploy-staging.sh
+```
+
+If the repository is private, Cloud Shell will ask for GitHub credentials when cloning (use a fine-grained read-only token, or `gh auth login`); do not paste a token into this repository or into a chat.
+
+Optional settings: `REGION`, `MIN_INSTANCES=0` (cheaper, see [Costs](#costs)), and `GEMINI_MODEL=<a model your key can use>` (the script then asks for the key with hidden input; without it the app deploys with no model and the chat says it cannot answer).
+
+The script does steps 1 to 8 below: it checks that billing is on, creates the private buckets, service account, secrets and image, deploys a **private** service, and runs `scripts/verify-deployment.mjs` against it. It asks before doing anything, is safe to run again (existing secrets are kept, never replaced), never prints a secret, and **never grants public access**. It was tested against a stand-in `gcloud` (`tests/deployScript.test.ts`), not against Google Cloud.
+
+To check any deployment later, from a machine with Node 18+ and a clone of the repository:
+
+```bash
+THP_PASSCODE=$(gcloud secrets versions access latest --secret=thp-pharmacist-passcode) \
+THP_IDENTITY_TOKEN=$(gcloud auth print-identity-token) \
+node scripts/verify-deployment.mjs --url https://YOUR-SERVICE-URL
+```
+
+(`THP_IDENTITY_TOKEN` is only for a private service; leave it out once the service is public.) It runs 40 checks with fictional patients: health, security headers, anonymous access refused, pharmacist sign-in, QR code creation and single use, patient sign-in and plan, a patient refused pharmacist data, the emergency text for chest pain (including "no appetite and chest pain"), "should I stop" forwarded to the pharmacist, and the escalations appearing in the review queue. It leaves no unused access code behind.
+
 ## Steps
 
 Set these once in your shell.
@@ -111,6 +137,24 @@ gcloud run services add-iam-policy-binding $SERVICE --region=$REGION --member=al
 ```
 
 Then open the HTTPS address **on a phone on mobile data** and repeat the sign-in with a QR code scanned from a laptop screen. To undo: `gcloud run services remove-iam-policy-binding … --member=allUsers …`.
+
+## Costs
+
+Estimates for one staging service in `us-central1`, **not a quote**. Prices change; confirm them on the [Cloud Run pricing page](https://cloud.google.com/run/pricing) and the [pricing calculator](https://cloud.google.com/products/calculator) before you rely on them. The figures below are Google's published on-demand rates as found in the build session.
+
+| Item | Basis | Per month |
+| --- | --- | --- |
+| Cloud Run, always on (`MIN_INSTANCES=1`, the default) | 1 vCPU and 0.5 GiB for about 2.59 million seconds at $0.000018 per vCPU-second and $0.000002 per GiB-second; the free tier is 240,000 vCPU-seconds and 450,000 GiB-seconds | about **$44** with the free tier, about $49 without it |
+| Cloud Run, scale to zero (`MIN_INSTANCES=0`) | billed only while handling requests | **a few dollars at most** for light demo use (not verified here) |
+| Secret Manager | 3 secret versions; the first six are free | about $0 |
+| Artifact Registry | one image under 0.5 GiB; first 0.5 GiB free | about $0 to $0.10 |
+| Cloud Storage | two small buckets, a few MB; the 5 GB free tier is for some US regions | about $0, plus tiny operation charges from replication |
+| Cloud Build | one build per deploy | within the free allowance for occasional builds (not verified here) |
+| Gemini or OpenAI | per request | cents for a demo; set a budget alert on the key |
+
+So plan on **about $45 to $50 a month while it is running**, or under about $5 if you choose scale to zero. Scale to zero has a real cost in reliability: replication only runs while the container does, so a stop without time to flush can lose the last writes, and the daily label refresh does not run. Use it for a throwaway demo, not for something people depend on.
+
+To avoid surprise charges: create a [budget alert](https://console.cloud.google.com/billing/budgets) (for example $20), and when you finish, `gcloud run services delete $SERVICE --region=$REGION`, then delete the two buckets, the secrets and the Artifact Registry repository.
 
 ## Operating it
 

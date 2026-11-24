@@ -44,8 +44,10 @@ spec:
             - { name: CORS_ORIGINS, value: "capacitor://localhost" }
             - { name: LITESTREAM_REPLICA_URL, value: "gcs://DB_BUCKET/take-home-pharmacist" }
             - { name: UPLOAD_DIR, value: /mnt/uploads }
+            # BEGIN gemini (deploy/deploy-staging.sh removes this block when no model key is given)
             - { name: LLM_PROVIDER, value: gemini }
             - { name: GEMINI_MODEL, value: "SET_A_MODEL_YOUR_KEY_CAN_USE" }
+            # END gemini
             - { name: LABEL_REFRESH_HOURS, value: "24" }
             - { name: PATIENT_SESSION_HOURS, value: "24" }
             # Secrets come from Secret Manager, never from this file.
@@ -53,8 +55,10 @@ spec:
               valueFrom: { secretKeyRef: { name: thp-session-secret, key: latest } }
             - name: PHARMACIST_PASSCODE
               valueFrom: { secretKeyRef: { name: thp-pharmacist-passcode, key: latest } }
+            # BEGIN gemini
             - name: GEMINI_API_KEY
               valueFrom: { secretKeyRef: { name: thp-gemini-api-key, key: latest } }
+            # END gemini
           volumeMounts:
             - { name: uploads, mountPath: /mnt/uploads }
           startupProbe:
