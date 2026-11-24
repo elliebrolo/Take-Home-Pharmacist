@@ -68,14 +68,13 @@ export function reminderMode(): ReminderMode {
 
 export type EnableResult = 'granted' | 'denied';
 
-async function native() {
-  return (await import('@capacitor/local-notifications')).LocalNotifications;
-}
+// NOTE: a Capacitor plugin object is a Proxy. Never return or await it (for example from an async helper): JavaScript
+// would call .then() on it and that throws "not implemented". Destructure it inside the function that uses it.
 
 /** Native: ask permission and (re)schedule one repeating daily notification per slot. */
 export async function enableNativeReminders(slots: ReminderSlot[]): Promise<EnableResult> {
   try {
-    const LN = await native();
+    const { LocalNotifications: LN } = await import('@capacitor/local-notifications');
     const perm = await LN.requestPermissions();
     if (perm.display !== 'granted') return 'denied';
     await clearNativeReminders();
@@ -95,7 +94,7 @@ export async function enableNativeReminders(slots: ReminderSlot[]): Promise<Enab
 
 export async function nativeRemindersOn(): Promise<boolean> {
   try {
-    const LN = await native();
+    const { LocalNotifications: LN } = await import('@capacitor/local-notifications');
     return (await LN.checkPermissions()).display === 'granted' && (await LN.getPending()).notifications.length > 0;
   } catch {
     return false;
@@ -104,7 +103,7 @@ export async function nativeRemindersOn(): Promise<boolean> {
 
 export async function clearNativeReminders(): Promise<void> {
   try {
-    const LN = await native();
+    const { LocalNotifications: LN } = await import('@capacitor/local-notifications');
     const { notifications } = await LN.getPending();
     if (notifications.length) await LN.cancel({ notifications });
   } catch { /* nothing scheduled, or not running natively */ }

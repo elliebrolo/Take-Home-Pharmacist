@@ -122,3 +122,29 @@ describe('reminders', () => {
     }
   });
 });
+
+describe('Capacitor plugin proxies', () => {
+  test('saving the session in the native app causes no unhandled rejection', async () => {
+    fakeWindow({ native: true });
+    const errors: unknown[] = [];
+    const on = (e: unknown) => errors.push(e);
+    process.on('unhandledRejection', on);
+    try {
+      setToken('tok-x');
+      setServerUrl('https://svc.example.run.app');
+      forgetSession();
+      await new Promise((r) => setTimeout(r, 100));
+    } finally {
+      process.off('unhandledRejection', on);
+    }
+    assert.deepEqual(errors.map(String), []);
+  });
+  test('no helper returns or awaits a plugin object (a Proxy: .then() throws "not implemented")', async () => {
+    const fs = await import('node:fs');
+    for (const f of ['src/utils/api.ts', 'src/utils/reminders.ts']) {
+      const code = fs.readFileSync(f, 'utf8').replace(/\/\/.*$/gm, '');
+      assert.ok(!/return\s*\(?await import\('@capacitor\/[\w-]+'\)\)?\.\w+;/.test(code), `${f} returns a plugin`);
+      assert.ok(!/await\s+(native|prefs)\(\)/.test(code), `${f} awaits a plugin helper`);
+    }
+  });
+});

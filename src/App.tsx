@@ -1,5 +1,5 @@
 import { clearAllReminders } from './utils/reminders';
-import { apiFetch, clientKind, forgetSession, rememberSession, takeAccessCodeFromUrl } from './utils/api';
+import { apiFetch, clientKind, forgetSession, loadStoredSession, rememberSession, takeAccessCodeFromUrl } from './utils/api';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { PatientPortal } from './components/PatientPortal';
@@ -40,11 +40,12 @@ export default function App() {
   const [accessError, setAccessError] = useState<string | null>(null);
   useEffect(() => {
     const code = takeAccessCodeFromUrl();
-    if (!code) {
-      refresh();
-      return;
-    }
     (async () => {
+      await loadStoredSession(); // native app: bring back the saved token and server address first
+      if (!code) {
+        refresh();
+        return;
+      }
       try {
         const r = await apiFetch('/api/auth/redeem', {
           method: 'POST',

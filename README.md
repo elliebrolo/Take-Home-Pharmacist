@@ -2,19 +2,19 @@
 
 A take-home prototype that turns a pharmacist's consultation transcript into a patient's medication schedule. It has two interfaces:
 
-- **Patient app**: today's schedule with medication images, a medication Q&A assistant, a food check, dose reminders, and emergency guidance.
-- **Pharmacist workspace**: transcript intake, plan editing and approval, medication image confirmation, a review queue for patient questions, and an FDA label reference.
+- **Patient app**: today's schedule with medication images, a medication Q&A assistant, a food check, dose reminders (see [Known limitations](#known-limitations)), and emergency guidance. Patients sign in by scanning a QR code from their pharmacy.
+- **Pharmacist workspace**: transcript intake, plan editing and approval, patient access codes (QR), medication image confirmation, a review queue for patient questions, and an FDA label reference.
 
 > **This is a prototype, not a medical device.** It uses only fictional demo patients. Do not enter real patient information. Nothing in it has had clinical validation. See [Known limitations](#known-limitations).
 
-Stack: React 19, Vite, Express, SQLite (`node:sqlite`), Gemini or OpenAI API (optional).
+Stack: React 19, Vite, Express, SQLite (`node:sqlite`), Gemini or OpenAI API (optional). Deployable to Google Cloud Run ([docs/deployment.md](docs/deployment.md)) and packageable as an iOS app with Capacitor ([docs/ios.md](docs/ios.md)); the audit behind that work is in [docs/deployment-readiness-audit.md](docs/deployment-readiness-audit.md).
 
 ## 1. Installation and environment setup
 
 Requirements:
 
 - **Node.js 24 or newer.** The server uses the built-in `node:sqlite` module. Check with `node -v`.
-- npm.
+- npm. `npm install` and `npm ci` both work; `package-lock.json` is the lockfile used by CI and the container (`bun.lock` is kept for bun users, so run `bun install` after changing dependencies).
 - Internet access for RxNorm and DailyMed (public NLM services). They are used when a plan is approved and when answers are grounded in FDA labels.
 - Optional: an AI provider key, either [Gemini](https://aistudio.google.com/apikey) or [OpenAI](https://platform.openai.com/api-keys). Without one the app still runs; see [Choose the AI provider](#choose-the-ai-provider).
 
@@ -37,7 +37,15 @@ Edit `.env`. Every value below is optional in development:
 | `URGENT_WEBHOOK_URL` | Optional https webhook (Slack-style) told when an emergency or urgent item is queued. The message holds only the item number and reason, never patient names or text. See [Urgent-item notifications](#urgent-item-notifications). |
 | `LABEL_REFRESH_HOURS` | Hours between automatic re-reads of cached FDA labels (default `24`, `0` turns it off). Changed label text is flagged in the review queue. |
 | `DB_FILE` | SQLite file (default `data/app.db`). |
-| `PORT` | Server port (default `3000`). |
+| `PORT` | Server port (default `3000`; Cloud Run sets it). |
+| `DEMO_MODE` | `true` lists and creates the fictional demo patients. Default on in development, **off in production**. |
+| `DATA_DIR`, `UPLOAD_DIR` | Where the database, uploaded photos and NLM photos live (default `./data`). Point at a persistent volume. |
+| `PUBLIC_BASE_URL` | The address patients open, used in QR access links. Default: the address of the request. |
+| `CORS_ORIGINS` | Exact origins allowed to call the API from another origin (the iOS app: `capacitor://localhost`). Default none. |
+| `PATIENT_SESSION_HOURS` | Patient session length (default 24, max 720). Pharmacists: 8 hours. |
+| `TRUST_PROXY` | Proxy hops in front of the app (default 1 in production, 0 otherwise). |
+| `VITE_API_BASE_URL` | Build time: API address for a web or iOS build that is not served by the API. See [docs/ios.md](docs/ios.md). |
+| `LITESTREAM_REPLICA_URL`, `ALLOW_EPHEMERAL_DB` | Container only: where the database is replicated; see [docs/deployment.md](docs/deployment.md). |
 
 ### Choose the AI provider
 
@@ -89,11 +97,14 @@ Other commands:
 ```bash
 npm run build    # production build into dist/
 npm start        # same server entry; set NODE_ENV=production to serve dist/
+npm run ios:sync # build for the iOS app and copy it into ios/ (see docs/ios.md)
 npm run lint     # TypeScript type check (tsc --noEmit)
 npm test         # automated tests
 ```
 
-In production (`NODE_ENV=production`) the server requires `SESSION_SECRET` and `PHARMACIST_PASSCODE`, and demo patients need a code from `PATIENT_CODES`.
+In production (`NODE_ENV=production`) the server requires `SESSION_SECRET` (32+ characters) and `PHARMACIST_PASSCODE` (12+ characters), does not list or create demo patients unless `DEMO_MODE=true`, and sends HSTS and a Content-Security-Policy. Run `npm run build` first so `dist/` exists.
+
+Health checks: `GET /healthz` (process is up) and `GET /readyz` (database readable). Neither needs sign-in.
 
 The first run creates `data/app.db` and seeds the three demo patients as approved plans marked "Demo data (not reviewed)".
 
@@ -103,7 +114,7 @@ Open http://localhost:3000. You land on the **Sign in** page with two tabs.
 
 | Role | How |
 | --- | --- |
-| **I am a patient** | Choose a demo patient from the list and press **Sign in**. No code is needed unless `PATIENT_CODES` sets one. |
+| **I am a patient** | Scan the QR code a pharmacist created (or type the 20-character code), or, in demo mode, choose a demo patient under "Demo only". |
 | **I am a pharmacist** | Enter any name (it is recorded when you approve a plan) and the passcode. Use the value of `PHARMACIST_PASSCODE`, or the one printed in the server console. |
 
 Demo patients (all fictional):
@@ -114,7 +125,16 @@ Demo patients (all fictional):
 | Maria Santos | PT-9410 | metformin XR, glipizide, atorvastatin |
 | David Miller | PT-7193 | amoxicillin/clavulanate (Augmentin) |
 
-Use **Sign out** in the header to switch roles. Sessions last 8 hours. Sign-in is limited to 10 attempts per 10 minutes.
+Use **Sign out** in the header to switch roles. Pharmacist sessions last 8 hours and patient sessions 24 hours (`PATIENT_SESSION_HOURS`). Sign-in and code redemption are each limited to 10 attempts per 10 minutes.
+
+### Patient access codes (QR)
+
+1. Sign in as a pharmacist, pick a patient whose plan is **approved**, and press **Create access code** under *Patient access (QR code)*. Choose how long it stays valid (24 hours, 3 days or 7 days).
+2. The code appears once, as a QR code and as `XXXX-XXXX-XXXX-XXXX-XXXX`. You can copy the link or print the card.
+3. The patient scans the QR code with the phone camera (or types the code at sign-in) and sees only their own plan.
+4. A code works **once**, expires, and can be **revoked** while unused (see *Recent codes*). Only a hash is stored. The code travels after the `#` in the link, which browsers never send to servers, so link scanners cannot use it up.
+
+A lost or used code is replaced by creating a new one. In production this is the only way for a patient to sign in, apart from per-patient codes set in `PATIENT_CODES`.
 
 ## 4. Navigate the two interfaces
 
@@ -122,7 +142,7 @@ Use **Sign out** in the header to switch roles. Sessions last 8 hours. Sign-in i
 
 Three tabs:
 
-- **Today**: doses grouped by Morning, Midday, Evening and Bedtime, with a progress bar. Each medication card has **Mark taken** and **Show details** (form, how to take it, purpose, warnings, the pharmacist's note, refills). Dose reminders can be switched on from this tab.
+- **Today**: doses grouped by Morning, Midday, Evening and Bedtime, with a progress bar. Each medication card has **Mark taken** and **Show details** (form, how to take it, purpose, warnings, the pharmacist's note, refills). Dose reminders can be switched on from this tab: in the iOS app they arrive every day at each medicine's usual time; in a browser only while the page stays open.
 - **Ask a question**: the AI assistant. It is labelled "not a pharmacist".
 - **Food check**: type a food or drink to check against the patient's medications.
 
@@ -196,7 +216,7 @@ In **Food check**, enter "grapefruit". The result is always "caution" or "not ch
 ### Automated tests
 
 ```bash
-npm test                 # about 250 tests, run in a few seconds, using scripted fake models (including a fake OpenAI endpoint) and fake label data
+npm test                 # about 300 tests, run in a few seconds, using scripted fake models (including a fake OpenAI endpoint) and fake label data
 npm run eval             # the release gate only: emergency, grounding and out-of-scope cases (also part of npm test)
 RUN_LIVE=1 npm test      # also runs the live RxNorm/DailyMed test (needs internet)
 npm run lint
@@ -223,10 +243,14 @@ A background job (and the pharmacist-only `POST /api/drug-labels/refresh`) re-re
 - **Real providers not exercised.** Neither the Gemini nor the OpenAI path has been run against the live API from this repo, only against fakes. The default model names (`gemini-3.8-flash`, `gpt-5.4-mini`) are unverified. The transcript JSON schema is enforced by Gemini but only requested from OpenAI (non-strict), so the server checks the output shape and the pharmacist reviews every draft.
 - **Images.** NLM photos are US products from 2009–2016 and may not look like the Canadian product. They are reference photos only. DailyMed redisplay terms are unconfirmed.
 - **Notifications are a basic webhook** (optional). There is no acknowledgement, escalation or on-call schedule.
+- **Dose reminders are limited.** Each medicine has one stored usual time. A medicine taken more than once a day gets no reminder (its other times are not recorded and are not guessed); the screen names it. Browsers can only remind while the page is open, so the screen tells patients to set a phone alarm. Native reminders have not been tried on a device.
+- **Access codes are bearer credentials.** Anyone holding an unused code can open that patient's plan. They are single-use, expiring and revocable, but this is not identity verification.
+- **Database durability (staging).** The container replicates SQLite to Cloud Storage with Litestream; a redeploy briefly overlaps two instances and can lose seconds of writes. Real patient data needs a managed database. See [docs/deployment.md](docs/deployment.md).
+- **iOS app unbuilt.** The Capacitor project was generated and synced on Linux but never opened in Xcode, built or run. See [docs/ios.md](docs/ios.md).
 - **Experimental SQLite.** `node:sqlite` prints an experimental warning on Node 24.
 - UI tests are not included in the repo.
 - **Keyword net is not a translation service.** Non-English phrases were written by a developer and are unreviewed. Text in scripts the list cannot read (for example Arabic, Hindi) is never cleared as routine without the model, but the list cannot recognise an emergency in them.
-- **Baseline security headers only.** No Content-Security-Policy, no `trust proxy` setting (the sign-in limit is keyed by IP, so behind a reverse proxy configure Express accordingly).
+- **Security headers.** `nosniff`, frame and referrer headers always; HSTS and a Content-Security-Policy in production. The policy allows Google Fonts and DailyMed images; add any new external host to `server/core/http.ts`.
 
 ## Troubleshooting
 

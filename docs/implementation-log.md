@@ -51,3 +51,72 @@ These were deferred because they need approval, a decision, an external account 
 7. **Canadian product data** (Health Canada DPD beyond DIN checks) and a decision on licensed interaction data (plan "Open decisions" 1) and review timing (2).
 8. **Branch and CI**: review the branch, enable the CI workflow in the repository, and merge when satisfied. No pull request was opened.
 9. Optional follow-ups: Content-Security-Policy, Express `trust proxy` for the sign-in limiter behind a proxy, UI tests, re-attaching demo photos.
+
+---
+
+# Deployment and iOS preparation (second pass)
+
+Objective: prepare the app for Cloud Run and eventual iOS distribution, using synthetic data only. Branch `claude/festive-shannon-52jcx5` (not merged, not deployed). Based on the plan "Take Home Pharmacist: Tonight's development & deployment roadmap" and the repository's `CLAUDE.md` (merged from `main`). The audit and findings table are in `docs/deployment-readiness-audit.md`; the how-to guides are `docs/deployment.md` and `docs/ios.md`.
+
+## Checklist
+
+### Done in this session
+
+- [x] Verified the existing patient flow in a real browser at phone width (plan, mark taken, chat, emergency text) and the pharmacist flow (sign-in, workspace, review queue).
+- [x] **QR / profile access**: pharmacist issues single-use, expiring (1 hour to 7 days), revocable access codes shown as a QR code, link and 20-character code; patient scans or types it. Only a hash is stored; the code rides in the URL fragment; redeeming is rate limited; every step is audit-logged without the code.
+- [x] **Reminders made real and honest.** They were not implemented at all, despite the UI promising them (see the audit, finding 14).
+- [x] Health endpoints `/healthz` and `/readyz`; `PORT` binding; graceful SIGTERM shutdown; JSON errors for API paths; correct cache headers.
+- [x] Storage paths (`DATA_DIR`, `DB_FILE`, `UPLOAD_DIR`) no longer hard-coded.
+- [x] Production hardening: secret strength checks, HSTS, Content-Security-Policy (browser-tested), trust proxy, demo patients and the public patient list off unless `DEMO_MODE=true`.
+- [x] Reproducible build: removed the unused `esbuild` pin that broke `npm install`; `tsx` moved to dependencies; `package-lock.json` added; Node `>=24` declared; CI uses `npm ci`.
+- [x] Container: `Dockerfile` (multi-stage, non-root), `.dockerignore`, entrypoint with Litestream restore/replicate that refuses to run unreplicated in production, `deploy/cloudrun.yaml`, CI job that builds the image and smoke-tests it.
+- [x] Native-app readiness: one API client with configurable address (`VITE_API_BASE_URL` or a saved address), bearer-token auth and exact-origin CORS, token kept in Capacitor Preferences, signed-in images fetched with the token, `Notification` support detected.
+- [x] Capacitor 8 project generated and synced (`ios/`, `capacitor.config.ts`, `npm run ios:sync`).
+- [x] Documentation: README, `.env.example`, `docs/deployment.md`, `docs/ios.md`, `docs/deployment-readiness-audit.md`.
+- [x] Clinical safety safeguards unchanged: triage, validation, citation checks, pharmacist approval before patients see anything, and the evaluation gate all pass as before.
+
+### Needs you (deferred: credentials, accounts, Xcode, paid services, approval)
+
+- [ ] **Decide storage.** Litestream is fine for synthetic staging; real data needs a managed database (a code change, not done). See `docs/deployment.md`, "Decisions".
+- [ ] Create or choose a Google Cloud project, billing, region; run the steps in `docs/deployment.md` (buckets, service account, secrets, image build, deploy). Nothing was run against Google Cloud.
+- [ ] Provide a model key (Gemini or OpenAI) and a model name your key can use; the defaults in this repo are unverified.
+- [ ] **Approve going public** (step 9). The service is private until you add the `allUsers` invoker.
+- [ ] Check the first CI run of the new `container` job (it builds the image, which could not be done here), and fix anything it reports.
+- [ ] On a Mac: choose and set the bundle identifier, create `.env.ios`, run `npm run ios:sync`, open Xcode, sign, run on a simulator and a phone. Check the table in `docs/ios.md`, especially native reminders.
+- [ ] Apple: Developer account, Universal Links (so a QR code opens the app), icons and launch screen, TestFlight.
+- [ ] Decide: patients-only iOS build (hide the pharmacist tab)? Patient session length vs. single-use codes?
+- [ ] Still open from the first pass: real authentication and consent, encryption at rest, agreements and privacy review, clinician review of fixed text, triage lists and the evaluation set, an on-call path for urgent items.
+
+## Decisions made (non-blocking)
+
+1. **Litestream + Cloud Storage for staging persistence**, with the redeploy-overlap caveat stated plainly, rather than rewriting the data layer for Cloud SQL without your decision.
+2. **Single-use, hash-stored access codes in the URL fragment**, default 72 hours, patient sessions 24 hours. Chosen over multi-use codes to limit the damage of a lost printout; the cost is that a patient who signs out needs a new code.
+3. **Bearer tokens only for clients that ask (`client: "native"`)**; the web app keeps SameSite cookies and never receives the token in the response body.
+4. **Reminders never guess times.** A medicine taken more than once a day has one stored time, so it gets no reminder and the patient is told. Notification text is generic because it shows on a locked screen.
+5. **npm lockfile added alongside `bun.lock`**, because `CLAUDE.md` names `npm install` as the standard and the Docker/CI builds use `npm ci`. Two lockfiles can drift; run both installs after changing dependencies.
+6. **Production CSP allows `style-src 'unsafe-inline'`** (the UI uses inline styles) and Google Fonts and DailyMed images; scripts are `'self'` only.
+7. **Capacitor 8** (current major) rather than 7.
+
+## Verification results (build session)
+
+| Check | Result |
+| --- | --- |
+| `npm run lint` | clean |
+| `npm test` | 307 tests: 306 pass, 0 fail, 1 skipped (live RxNorm/DailyMed, needs `RUN_LIVE=1`) |
+| `npm run eval` (release gate) | 105 pass, 0 fail |
+| `npm run build` and `npm run build:ios` | succeed; the iOS build contains the baked API address, the plain build does not |
+| Clean copy: `npm ci` then lint, tests, build | pass (Node 22.23 here; the project requires 24) |
+| Production server from `npm ci --omit=dev` | starts, `/healthz` and `/readyz` OK, SIGTERM shuts down cleanly |
+| `npx cap add ios`, `npm run ios:sync` | succeed on Linux; 2 plugins found (local-notifications, preferences) |
+| Browser (Playwright, Chromium), dev server | patient flow, QR flow (create, scan, reuse refused, typed code, used-status) pass |
+| Browser, production mode with CSP/HSTS | QR flow passes with no CSP violations |
+| Browser, simulated native app on a different origin | bearer sign-in with no cookies, token kept across reload, chat over CORS, sign-out discards token, CORS refused for an unlisted origin |
+
+**Not run, and why:** the Docker image build and Litestream (no Docker daemon; GitHub release downloads blocked); anything on Google Cloud (no project or credentials); Xcode, a simulator or a device (no Mac); native reminders and Capacitor plugins against the real iOS bridge; live Gemini/OpenAI calls. The browser checks above are manual scripts and are not part of `npm test` (Playwright is not a project dependency).
+
+## Defects found and fixed along the way
+
+- A fresh clone could not run (missing `demoPhotos.ts`), fixed in the first pass.
+- A production start that exited silently after my own edit removed the `startServer()` call; caught by running the production server, fixed.
+- Capacitor plugin proxies returned from async helpers would have failed silently on a device; caught by a test, fixed and guarded.
+- `PUBLIC_BASE_URL` was read from the process environment at request time, bypassing configuration; caught by a test, fixed.

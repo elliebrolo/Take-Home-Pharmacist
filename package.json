@@ -12,11 +12,15 @@
     "lint": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "eval": "tsx --test tests/eval.test.ts",
-    "nlm:fetch": "tsx scripts/nlm-fetch.ts"
+    "nlm:fetch": "tsx scripts/nlm-fetch.ts",
+    "build:ios": "vite build --mode ios",
+    "ios:sync": "npm run build:ios && cap sync ios",
+    "ios:open": "cap open ios"
   },
   "dependencies": {
     "@capacitor/core": "^8.6.2",
     "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/preferences": "^8",
     "@google/genai": "^2.32.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",

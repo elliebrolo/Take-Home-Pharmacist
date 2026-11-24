@@ -21,6 +21,28 @@ function store(): Storage | null {
 let memoryToken: string | null = null;
 let memoryServer: string | null = null;
 
+/**
+ * iOS can clear a web view's localStorage when it is short of space, and a patient's access code works only once, so
+ * a lost token would lock them out. In the native app the token and server address are therefore ALSO kept in
+ * Capacitor Preferences (the app's own storage). Call this once at start-up, before the first request.
+ */
+// NOTE: never return or await a Capacitor plugin object (for example from an async helper): it is a Proxy, JavaScript
+// would call .then() on it, and that throws "not implemented". Destructure it inside the function that uses it.
+export async function loadStoredSession(): Promise<void> {
+  if (!isNativeApp()) return;
+  try {
+    const { Preferences } = await import('@capacitor/preferences');
+    memoryToken = (await Preferences.get({ key: TOKEN_KEY })).value ?? memoryToken;
+    memoryServer = (await Preferences.get({ key: SERVER_KEY })).value ?? memoryServer;
+  } catch { /* fall back to localStorage */ }
+}
+function persistNative(key: string, value: string | null) {
+  if (!isNativeApp()) return;
+  import('@capacitor/preferences')
+    .then(({ Preferences }) => (value ? Preferences.set({ key, value }) : Preferences.remove({ key })))
+    .catch(() => { /* best effort: localStorage still holds it */ });
+}
+
 /** True inside the Capacitor shell (the native runtime defines window.Capacitor; no plugin import needed). */
 export function isNativeApp(): boolean {
   return !!(window as any).Capacitor?.isNativePlatform?.();
@@ -48,6 +70,7 @@ export function setServerUrl(input: string): boolean {
   const clean = input.trim() === '' ? '' : cleanServerUrl(input);
   if (clean === null) return false;
   memoryServer = clean || null;
+  persistNative(SERVER_KEY, memoryServer);
   try {
     clean ? store()?.setItem(SERVER_KEY, clean) : store()?.removeItem(SERVER_KEY);
   } catch { /* ignore */ }
@@ -63,6 +86,7 @@ export const clientKind = (): 'native' | undefined => (usesBearer() ? 'native' :
 export const getToken = (): string | null => (usesBearer() ? (store()?.getItem(TOKEN_KEY) ?? memoryToken) : null);
 export function setToken(token: string | null) {
   memoryToken = token;
+  persistNative(TOKEN_KEY, token);
   try {
     token ? store()?.setItem(TOKEN_KEY, token) : store()?.removeItem(TOKEN_KEY);
   } catch { /* ignore */ }
