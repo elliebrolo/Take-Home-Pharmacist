@@ -1,3 +1,5 @@
+import { clearAllReminders } from './utils/reminders';
+import { apiFetch, clientKind, forgetSession, rememberSession, takeAccessCodeFromUrl } from './utils/api';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Header } from './components/Header';
 import { PatientPortal } from './components/PatientPortal';
@@ -18,12 +20,12 @@ export default function App() {
   // The server decides who you are and what you may see; the browser never chooses a patient.
   const refresh = useCallback(async () => {
     try {
-      const me = await (await fetch('/api/auth/me')).json();
+      const me = await (await apiFetch('/api/auth/me')).json();
       setSession(me.session);
       setConsultation(null);
       setLoadError(null);
       if (me.session?.role === 'patient') {
-        const r = await fetch('/api/me/consultation');
+        const r = await apiFetch('/api/me/consultation');
         const d = await r.json();
         if (r.ok) setConsultation(d.consultation);
         else setLoadError(d.error || 'Could not load your plan.');
@@ -34,13 +36,39 @@ export default function App() {
     }
   }, []);
 
+  // A patient who scanned their QR code arrives with "#access=CODE". Trade it for a session, then load as usual.
+  const [accessError, setAccessError] = useState<string | null>(null);
   useEffect(() => {
-    refresh();
+    const code = takeAccessCodeFromUrl();
+    if (!code) {
+      refresh();
+      return;
+    }
+    (async () => {
+      try {
+        const r = await apiFetch('/api/auth/redeem', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, client: clientKind() }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) rememberSession(d);
+        else setAccessError(d.error || 'This access link did not work. Ask your pharmacy for a new one.');
+      } catch {
+        setAccessError('Could not reach the server. Check your connection and scan the code again.');
+      }
+      refresh();
+    })();
   }, [refresh]);
 
   const signOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    refresh();
+    try {
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      forgetSession();
+      void clearAllReminders(); // never leave one patient's reminders firing on a shared phone
+      refresh();
+    }
   };
 
   const handleOpenEmergencyModal = (triage?: EmergencyTriageResult) => {
@@ -66,7 +94,7 @@ export default function App() {
         {session === undefined ? (
           <p className="text-slate-600 dark:text-slate-300">Loading…</p>
         ) : !session ? (
-          <SignIn onSignedIn={refresh} />
+          <SignIn onSignedIn={refresh} notice={accessError} />
         ) : session.role === 'patient' ? (
           consultation ? (
             <PatientPortal consultation={consultation} onOpenEmergencyModal={handleOpenEmergencyModal} />

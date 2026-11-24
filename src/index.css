@@ -13,3 +13,11 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Print only the access-code card (pharmacist > Patient access > Print). */
+@media print {
+  body.printing-access * { visibility: hidden; }
+  body.printing-access #access-print,
+  body.printing-access #access-print * { visibility: visible; }
+  body.printing-access #access-print { position: absolute; left: 0; top: 0; width: 100%; color: #000; }
+}

@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/api';
 import React, { useState } from 'react';
 import { Pill, Search, ExternalLink } from 'lucide-react';
 
@@ -25,7 +26,7 @@ export const DrugCatalogSearch: React.FC = () => {
     setMessage(null);
     setResult(null);
     try {
-      const r = await fetch(`/api/drug-lookup?q=${encodeURIComponent(term.trim())}`);
+      const r = await apiFetch(`/api/drug-lookup?q=${encodeURIComponent(term.trim())}`);
       const d = await r.json();
       if (!r.ok) setMessage(d.error || 'Lookup failed.');
       else if (d.results?.length) setResult(d.results[0]);

@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/api';
 import React, { useState } from 'react';
 import { ExternalLink, RefreshCw, Search } from 'lucide-react';
 import { PhotoLookupResult } from '../types/pharmacy';
@@ -24,7 +25,7 @@ export const PhotoSourceDailyMed: React.FC<PhotoSourceProps> = ({ medication: me
     setError(null);
     setResults(null);
     try {
-      const resp = await fetch(`/api/medication-photo?ndc=${encodeURIComponent(ndc)}`);
+      const resp = await apiFetch(`/api/medication-photo?ndc=${encodeURIComponent(ndc)}`);
       const data = await resp.json();
       if (!resp.ok || !data.success) setError(data.error || 'Lookup failed.');
       else {

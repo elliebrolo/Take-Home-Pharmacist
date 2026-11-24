@@ -1,3 +1,5 @@
+import { ApiImage } from './ApiImage';
+import { apiFetch } from '../utils/api';
 import React, { useEffect, useState } from 'react';
 import { ExternalLink, RefreshCw } from 'lucide-react';
 import { NlmCandidate } from '../types/pharmacy';
@@ -33,7 +35,7 @@ export const PhotoSourceNlm: React.FC<PhotoSourceProps> = ({ medication: med, ph
       strength: med.strength,
       dosageForm: med.dosageForm,
     });
-    fetch(`/api/medication-photo/nlm?${params}`)
+    apiFetch(`/api/medication-photo/nlm?${params}`)
       .then(async (resp) => {
         const body = await resp.json().catch(() => ({}));
         if (cancelled) return;
@@ -91,7 +93,7 @@ export const PhotoSourceNlm: React.FC<PhotoSourceProps> = ({ medication: med, ph
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {data.candidates.map((c) => (
             <div key={c.imageUrl} className="p-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg space-y-1.5">
-              <img
+              <ApiImage
                 src={c.imageUrl}
                 alt={`Reference photo: ${c.name}, ${c.labeler}`}
                 loading="lazy"

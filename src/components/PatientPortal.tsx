@@ -1,3 +1,4 @@
+import { REMINDER_BODY, REMINDER_TITLE, enableNativeReminders, msUntilNext, nativeRemindersOn, planReminders, reminderMode } from '../utils/reminders';
 import React, { useState, useEffect } from 'react';
 import {
   Bell,
@@ -57,11 +58,27 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({ consultation, onOp
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [reminderNotice, setReminderNotice] = useState('');
 
+  const mode = reminderMode();
+  const plan = React.useMemo(() => planReminders(consultation.medications), [consultation.medications]);
+
   useEffect(() => {
-    if ('Notification' in window) {
-      setNotificationsEnabled(Notification.permission === 'granted');
-    }
-  }, []);
+    if (mode === 'page') setNotificationsEnabled(Notification.permission === 'granted');
+    if (mode === 'native') nativeRemindersOn().then(setNotificationsEnabled);
+  }, [mode]);
+
+  // Browser only: while this page is open, fire a notification at each usual time. (The native app schedules its own.)
+  useEffect(() => {
+    if (mode !== 'page' || !notificationsEnabled || Notification.permission !== 'granted') return;
+    const timers = plan.slots.map((slot) => {
+      const arm = (): ReturnType<typeof setTimeout> =>
+        setTimeout(() => {
+          notificationService.sendPushNotification(REMINDER_TITLE, { body: REMINDER_BODY });
+          timers[plan.slots.indexOf(slot)] = arm();
+        }, msUntilNext(slot, new Date()));
+      return arm();
+    });
+    return () => timers.forEach(clearTimeout);
+  }, [mode, notificationsEnabled, plan]);
 
   const handleToggleDose = (medId: string, slotId: string) => {
     const key = `${medId}-${slotId}`;
@@ -71,17 +88,22 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({ consultation, onOp
   };
 
   const handleEnableReminders = async () => {
-    const status = await notificationService.requestPermission();
+    if (plan.slots.length === 0) {
+      setReminderNotice('None of your medicines has a single usual time, so no reminder can be set. Please set your own phone alarms.');
+      return;
+    }
+    const status = mode === 'native' ? await enableNativeReminders(plan.slots) : await notificationService.requestPermission();
     if (status === 'granted') {
       setNotificationsEnabled(true);
-      notificationService.sendPushNotification('Reminders are on', {
-        body: `You will get a reminder before each dose, ${consultation.patientName}.`,
-      });
-      setReminderNotice('Reminders are on. We sent you a test message.');
+      if (mode === 'page') notificationService.sendPushNotification('Reminders are on', { body: 'This is a test. Your reminders will look like this.' });
+      setReminderNotice(
+        mode === 'native'
+          ? `Reminders are on every day at ${plan.slots.map((s) => formatTime12h(s.time)).join(', ')}.`
+          : `Reminders are on at ${plan.slots.map((s) => formatTime12h(s.time)).join(', ')}, but only while this page stays open.`,
+      );
     } else {
-      setReminderNotice('Reminders are blocked in your browser settings.');
+      setReminderNotice(mode === 'native' ? 'Reminders are blocked. Turn them on in your phone Settings, under Notifications.' : 'Reminders are blocked in your browser settings.');
     }
-    setTimeout(() => setReminderNotice(''), 5000);
   };
 
   const getMedsForSlot = (slot: TimeOfDay) => consultation.medications.filter((m) => m.timeOfDay.includes(slot));
@@ -159,13 +181,13 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({ consultation, onOp
               aria-selected={selected}
               aria-controls={`panel-${tab.id}`}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 min-h-11 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-base font-semibold whitespace-nowrap transition-colors ${
+              className={`flex-1 min-h-11 flex items-center justify-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-2 rounded-lg text-[15px] sm:text-base font-semibold whitespace-nowrap transition-colors ${
                 selected
                   ? 'bg-white dark:bg-slate-900 text-teal-800 dark:text-teal-300 shadow-sm'
                   : 'text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100'
               }`}
             >
-              {tab.icon}
+              <span className="hidden min-[420px]:inline-flex" aria-hidden="true">{tab.icon}</span>
               {tab.label}
             </button>
           );
@@ -221,11 +243,15 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({ consultation, onOp
                 <div>
                   <p className="text-base font-semibold text-slate-900 dark:text-slate-100">Dose reminders</p>
                   <p className="text-sm text-slate-600 dark:text-slate-300">
-                    {notificationsEnabled ? 'On for this device.' : 'Get a reminder before each dose.'}
+                    {mode === 'none'
+                      ? 'Reminders are not available in this browser. Please set alarms on your phone.'
+                      : notificationsEnabled
+                        ? mode === 'native' ? 'On for this phone.' : 'On, while this page is open.'
+                        : mode === 'native' ? 'Get a reminder at the usual time for each medicine.' : 'Get a reminder at each usual time while this page is open.'}
                   </p>
                 </div>
               </div>
-              {notificationsEnabled ? (
+              {mode === 'none' ? null : notificationsEnabled ? (
                 <span className="flex items-center gap-1.5 px-3 py-2 bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200 rounded-lg text-sm font-bold">
                   <CheckCircle className="w-4 h-4" aria-hidden="true" /> On
                 </span>
@@ -238,7 +264,17 @@ export const PatientPortal: React.FC<PatientPortalProps> = ({ consultation, onOp
                   Turn on reminders
                 </button>
               )}
-              <p role="status" className="w-full text-sm text-slate-600 dark:text-slate-300 empty:hidden">
+              {mode === 'page' && (
+                <p className="w-full text-sm text-slate-600 dark:text-slate-300">
+                  A web page cannot remind you once it is closed. For dependable reminders, set an alarm on your phone for each dose time.
+                </p>
+              )}
+              {plan.skipped.length > 0 && (
+                <p className="w-full text-sm text-slate-700 dark:text-slate-200">
+                  No reminder is set for {plan.skipped.join(', ')}: {plan.skipped.length === 1 ? 'it is' : 'they are'} taken more than once a day. Please set your own alarm{plan.skipped.length === 1 ? '' : 's'}.
+                </p>
+              )}
+              <p role="status" className="w-full text-sm font-semibold text-slate-700 dark:text-slate-200 empty:hidden">
                 {reminderNotice}
               </p>
             </section>

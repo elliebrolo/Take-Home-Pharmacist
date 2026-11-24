@@ -1,3 +1,4 @@
+import { apiFetch } from './api';
 const MAX_DIMENSION = 1200;
 const MAX_BYTES = 5 * 1024 * 1024;
 
@@ -26,7 +27,7 @@ export async function prepareImageForUpload(file: File): Promise<Blob> {
 }
 
 export async function uploadMedicationPhoto(blob: Blob): Promise<string> {
-  const resp = await fetch('/api/medication-photo/upload', {
+  const resp = await apiFetch('/api/medication-photo/upload', {
     method: 'POST',
     headers: { 'Content-Type': blob.type || 'image/jpeg' },
     body: blob,

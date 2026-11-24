@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/api';
 import React, { useState } from 'react';
 import { Utensils, AlertTriangle, CheckCircle, ShieldAlert, Search, RefreshCw, Info, HelpCircle } from 'lucide-react';
 import { DietaryWarning, MedicationScheduleItem } from '../types/pharmacy';
@@ -62,7 +63,7 @@ export const FoodSafetyChecker: React.FC<FoodSafetyCheckerProps> = ({
     setResult(null);
 
     try {
-      const response = await fetch('/api/check-food-interaction', {
+      const response = await apiFetch('/api/check-food-interaction', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ foodItem: item }),

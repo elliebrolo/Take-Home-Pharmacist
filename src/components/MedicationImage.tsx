@@ -1,3 +1,4 @@
+import { ApiImage } from './ApiImage';
 import React from 'react';
 import { Pill } from 'lucide-react';
 import { MedicationScheduleItem } from '../types/pharmacy';
@@ -40,7 +41,7 @@ export const MedicationImage: React.FC<MedicationImageProps> = ({ medication, si
       : `Package label image for ${medication.medicationName} ${medication.strength}`;
 
   return (
-    <img
+    <ApiImage
       src={photo.imageUrl}
       alt={alt}
       loading="lazy"

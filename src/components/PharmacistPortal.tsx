@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/api';
 import React, { useEffect, useState } from 'react';
 import { FileText, Sparkles, CheckCircle2, AlertTriangle, RefreshCw, Plus, Trash2, ArrowRight, ShieldAlert, Pill, Eye } from 'lucide-react';
 import { ConsultationRecord, MedicationScheduleItem, DietaryWarning, TimeOfDay, FoodRequirement, VerifiedMedicationPhoto } from '../types/pharmacy';
@@ -5,6 +6,7 @@ import { PictorialWarningLabel, detectMedicationPictorials, detectFoodQueryPicto
 import { MedicationPhotoVerifier } from './MedicationPhotoVerifier';
 import { DrugCatalogSearch } from './DrugCatalogSearch';
 import { ReviewQueue } from './ReviewQueue';
+import { PatientAccessPanel } from './PatientAccessPanel';
 
 interface CaseItem {
   consultation: ConsultationRecord;
@@ -18,7 +20,7 @@ export const PharmacistPortal: React.FC<{ pharmacistName: string }> = ({ pharmac
   const [error, setError] = useState<string | null>(null);
   const load = async () => {
     try {
-      const r = await fetch('/api/consultations');
+      const r = await apiFetch('/api/consultations');
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setCases(d.items);
@@ -95,7 +97,7 @@ const PharmacistWorkspace: React.FC<WorkspaceProps> = ({ cases: caseItems, pharm
     setExtractSuccess(false);
 
     try {
-      const response = await fetch('/api/parse-transcript', {
+      const response = await apiFetch('/api/parse-transcript', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -150,13 +152,13 @@ const PharmacistWorkspace: React.FC<WorkspaceProps> = ({ cases: caseItems, pharm
     setPublishing(true);
     setPublishMsg(null);
     try {
-      const put = await fetch(`/api/consultations/${encodeURIComponent(updated.id)}`, {
+      const put = await apiFetch(`/api/consultations/${encodeURIComponent(updated.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ consultation: updated }),
       });
       if (!put.ok) throw new Error((await put.json()).error || 'Could not save.');
-      const ok = await fetch(`/api/consultations/${encodeURIComponent(updated.id)}/approve`, {
+      const ok = await apiFetch(`/api/consultations/${encodeURIComponent(updated.id)}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ attestChecked: true }),
@@ -290,6 +292,13 @@ const PharmacistWorkspace: React.FC<WorkspaceProps> = ({ cases: caseItems, pharm
             })}
           </div>
         </div>
+
+        <PatientAccessPanel
+          patientId={caseItems.find((c) => c.consultation.id === selectedCaseId)?.consultation.patientId ?? currentConsultation.patientId}
+          patientName={caseItems.find((c) => c.consultation.id === selectedCaseId)?.consultation.patientName ?? currentConsultation.patientName}
+          pharmacyName={caseItems.find((c) => c.consultation.id === selectedCaseId)?.consultation.pharmacyName ?? currentConsultation.pharmacyName}
+          approved={!!caseItems.find((c) => c.consultation.id === selectedCaseId)?.approval}
+        />
 
         {/* Patient Metadata Inputs */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 p-4 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700">

@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/api';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Inbox, RefreshCw, Send } from 'lucide-react';
 import { notificationService } from '../utils/audioNotification';
@@ -32,7 +33,7 @@ export const ReviewQueue: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const r = await fetch('/api/review-items');
+      const r = await apiFetch('/api/review-items');
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       // Alert (once per item) when a new emergency or urgent item arrives while this page is open.
@@ -55,7 +56,7 @@ export const ReviewQueue: React.FC = () => {
   const act = async (id: number, path: 'reply' | 'resolve', body: object) => {
     setBusy(id);
     try {
-      const r = await fetch(`/api/review-items/${id}/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const r = await apiFetch(`/api/review-items/${id}/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       await load();

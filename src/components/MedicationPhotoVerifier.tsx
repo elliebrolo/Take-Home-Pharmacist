@@ -1,3 +1,5 @@
+import { ApiImage } from './ApiImage';
+import { apiFetch } from '../utils/api';
 import React, { useState } from 'react';
 import { AlertTriangle, Camera, CheckCircle2, ExternalLink, RefreshCw, Trash2 } from 'lucide-react';
 import { DpdProduct, MedicationScheduleItem, PhotoSource, VerifiedMedicationPhoto } from '../types/pharmacy';
@@ -63,7 +65,7 @@ export const MedicationPhotoVerifier: React.FC<MedicationPhotoVerifierProps> = (
     setDpdError(null);
     setDpd(null);
     try {
-      const resp = await fetch(`/api/dpd?din=${encodeURIComponent(din)}`);
+      const resp = await apiFetch(`/api/dpd?din=${encodeURIComponent(din)}`);
       const data = await resp.json();
       if (!resp.ok || !data.success) setDpdError(data.error || 'Lookup failed.');
       else setDpd(data.found ? (data as DpdProduct) : 'not_found');
@@ -88,7 +90,7 @@ export const MedicationPhotoVerifier: React.FC<MedicationPhotoVerifierProps> = (
       {/* Current state */}
       {verified ? (
         <div className="flex items-start gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg">
-          <img
+          <ApiImage
             src={verified.imageUrl}
             alt={`Confirmed image for ${med.medicationName} ${med.strength}`}
             referrerPolicy="no-referrer"

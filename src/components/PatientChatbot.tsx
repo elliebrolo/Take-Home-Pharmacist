@@ -1,3 +1,4 @@
+import { apiFetch } from '../utils/api';
 import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Send, AlertTriangle, Phone, MapPin, Sparkles, ShieldAlert, HeartPulse, UserCheck, FileText } from 'lucide-react';
 import { ConsultationRecord, ChatMessage, ChatCitation, EmergencyTriageResult } from '../types/pharmacy';
@@ -82,7 +83,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
     });
     const load = async (initial: boolean) => {
       try {
-        const r = await fetch(`/api/chat/messages?after=${lastServerId.current}`);
+        const r = await apiFetch(`/api/chat/messages?after=${lastServerId.current}`);
         if (!r.ok || cancelled) return;
         const { messages: rows } = await r.json();
         if (!rows.length) return;
@@ -139,7 +140,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
     let streamStarted = false;
     try {
       // The server checks the answer before sending it, so text arrives only after it has been validated.
-      const response = await fetch('/api/patient-chat-stream', {
+      const response = await apiFetch('/api/patient-chat-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userText }),
@@ -217,7 +218,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
         return;
       }
       try {
-        const response = await fetch('/api/patient-chat', {
+        const response = await apiFetch('/api/patient-chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: userText }),

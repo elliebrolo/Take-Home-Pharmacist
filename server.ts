@@ -111,7 +111,14 @@ async function startServer() {
 
 
 function express_static() {
-  return express.static(path.join(__dirname, 'dist'));
+  // Built files have content hashes in their names, so they can be cached for a year; the page itself must be revalidated
+  // on every load so a new release reaches users straight away.
+  return express.static(path.join(__dirname, 'dist'), {
+    index: 'index.html',
+    setHeaders: (res, file) => {
+      res.setHeader('Cache-Control', file.endsWith('index.html') ? 'no-cache' : 'public, max-age=31536000, immutable');
+    },
+  });
 }
 
 startServer();
