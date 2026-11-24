@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Send, AlertTriangle, Phone, MapPin, Sparkles, ShieldAlert, HeartPulse, UserCheck, FileText } from 'lucide-react';
 import { ConsultationRecord, ChatMessage, ChatCitation, EmergencyTriageResult } from '../types/pharmacy';
 import { notificationService } from '../utils/audioNotification';
@@ -24,11 +24,43 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
 
+  // Scroll the conversation only. (scrollIntoView would also move the whole page.)
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = logRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   };
+
+  // Fill the space between the tabs above and the page footer below. Measured rather than hard-coded
+  // because the welcome banner, tab bar and footer change height with screen width and text size.
+  // Never smaller than MIN_CHAT_HEIGHT: on a short screen the page scrolls instead.
+  const MIN_CHAT_HEIGHT = 420;
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const fit = () => {
+      const card = cardRef.current;
+      if (!card) return;
+      const top = card.getBoundingClientRect().top + window.scrollY;
+      const footerH = document.querySelector('footer')?.getBoundingClientRect().height ?? 0;
+      // Everything between the card and the footer (the main area's padding and anything the page renders
+      // below the chat) has to fit above the footer too, so measure it instead of assuming it.
+      const main = card.closest('main');
+      const mainBottom = main ? main.getBoundingClientRect().bottom : card.getBoundingClientRect().bottom;
+      const below = Math.max(0, mainBottom - card.getBoundingClientRect().bottom);
+      const room = window.innerHeight - top - footerH - below;
+      setCardHeight(Math.max(MIN_CHAT_HEIGHT, Math.floor(room)));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
+    ro?.observe(document.body); // banner/tab wrapping or footer changes
+    return () => {
+      window.removeEventListener('resize', fit);
+      ro?.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     scrollToBottom();
@@ -244,9 +276,13 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
 
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-[700px] overflow-hidden">
+    <div
+      ref={cardRef}
+      style={{ height: cardHeight ?? 700 }}
+      className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col overflow-hidden"
+    >
       {/* Chat Header */}
-      <div className="p-4 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
+      <div className="shrink-0 p-4 bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div
             aria-hidden="true"
@@ -274,10 +310,11 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
 
       {/* Messages */}
       <div
+        ref={logRef}
         role="log"
         aria-live="polite"
         aria-label="Conversation"
-        className="flex-1 p-4 overflow-y-auto space-y-4"
+        className="flex-1 min-h-0 p-4 overflow-y-auto overscroll-contain space-y-4"
       >
         {messages.map((msg) => (
           <div key={msg.id} className={`flex gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -419,11 +456,10 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
           </div>
         ))}
 
-        <div ref={messagesEndRef} />
       </div>
 
       {/* Suggested questions, built from this patient's medicines */}
-      <div className="p-2.5 bg-slate-50/80 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 overflow-x-auto">
+      <div className="shrink-0 p-2.5 bg-slate-50/80 dark:bg-slate-800/50 border-t border-slate-200 dark:border-slate-800 flex items-center gap-2 overflow-x-auto">
         <span className="text-slate-600 dark:text-slate-300 text-sm font-medium shrink-0 flex items-center gap-1 pl-1">
           <Sparkles className="w-4 h-4 text-teal-700" aria-hidden="true" /> Try:
         </span>
@@ -446,7 +482,7 @@ export const PatientChatbot: React.FC<PatientChatbotProps> = ({
           e.preventDefault();
           handleSendMessage();
         }}
-        className="p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex gap-2"
+        className="shrink-0 p-3 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex gap-2"
       >
         <input
           type="text"
