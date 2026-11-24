@@ -20,10 +20,18 @@ export interface ChatReply {
 const MAX_MESSAGE = 1000;
 const PRIORITY: Record<string, number> = { emergency: 1, urgent: 2, needs_pharmacist: 3, validation_failed: 4, llm_unavailable: 4, audit: 5 };
 
-export function queueReview(deps: Deps, patientId: string, reason: string, question: string, detail: unknown) {
-  deps.db
+export function queueReview(deps: Deps, patientId: string, reason: string, question: string, detail: unknown): number {
+  const priority = PRIORITY[reason] ?? 4;
+  const r = deps.db
     .prepare('INSERT INTO review_items (patient_id, reason, priority, question, detail, created_at) VALUES (?,?,?,?,?,?)')
-    .run(patientId, reason, PRIORITY[reason] ?? 4, question, JSON.stringify(detail ?? null), new Date().toISOString());
+    .run(patientId, reason, priority, question, JSON.stringify(detail ?? null), new Date().toISOString());
+  const itemId = Number(r.lastInsertRowid);
+  try {
+    deps.notify?.({ itemId, reason, priority });
+  } catch {
+    /* a failing notifier must never fail the patient's request */
+  }
+  return itemId;
 }
 
 function store(deps: Deps, patientId: string, sender: string, kind: string, text: string, citations?: Citation[]): number {

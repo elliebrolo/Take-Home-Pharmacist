@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Inbox, RefreshCw, Send } from 'lucide-react';
+import { notificationService } from '../utils/audioNotification';
 
 interface Item {
   id: number;
@@ -27,12 +28,17 @@ export const ReviewQueue: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [replies, setReplies] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState<number | null>(null);
+  const seen = useRef<Set<number> | null>(null); // null until the first load, so opening the page does not chime
 
   const load = useCallback(async () => {
     try {
       const r = await fetch('/api/review-items');
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+      // Alert (once per item) when a new emergency or urgent item arrives while this page is open.
+      const urgent: Item[] = d.items.filter((i: Item) => i.priority <= 2);
+      if (seen.current && urgent.some((i) => !seen.current!.has(i.id))) notificationService.playEmergencyAlertTone();
+      seen.current = new Set(urgent.map((i) => i.id));
       setItems(d.items);
       setError(null);
     } catch (e: any) {

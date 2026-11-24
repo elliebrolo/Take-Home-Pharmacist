@@ -8,6 +8,7 @@ import type { Deps } from './server/core/deps.ts';
 import { createApp } from './server/app.ts';
 import { LabelKnowledge } from './server/knowledge/store.ts';
 import { createLlm } from './server/chat/llm.ts';
+import { createNotifier } from './server/core/notify.ts';
 import { registerMedicationPhotoRoutes } from './server/medicationPhotos.ts';
 import { registerTranscriptRoute } from './server/routes/transcript.ts';
 import { registerDrugRoutes } from './server/routes/drugs.ts';
@@ -21,6 +22,7 @@ const port = process.env.PORT || 3000;
 const db = openDb(process.env.DB_FILE || path.join(__dirname, 'data', 'app.db'));
 const auth = loadAuthConfig();
 const { llm, note: llmNote } = createLlm();
+const { notify, note: notifyNote } = createNotifier(db);
 const deps: Deps = {
   db,
   auth,
@@ -28,6 +30,7 @@ const deps: Deps = {
   llm,
   auditRate: Number(process.env.AUDIT_RATE ?? 0.2),
   random: Math.random,
+  notify,
 };
 
 const { app, store } = createApp(deps);
@@ -66,6 +69,7 @@ async function startServer() {
   app.listen(port, () => {
     console.log(`TakeHomePharmacist server running on port ${port}`);
     console.log(deps.llm ? `AI model: ${llmNote}` : `AI model: NOT configured (${llmNote}). Chat will say it cannot answer; transcript reading is off.`);
+    console.log(`Urgent-item notifications: ${notifyNote}`);
     if (!process.env.PHARMACIST_PASSCODE) console.log(`Pharmacist passcode for this run (set PHARMACIST_PASSCODE to fix it): ${auth.pharmacistPasscode}`);
   });
 }

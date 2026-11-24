@@ -1,5 +1,6 @@
 import type { Db } from './db.ts';
 import type { AuthConfig } from './auth.ts';
+import type { Notifier } from './notify.ts';
 
 /** A numbered passage the model may cite. */
 export interface Source {
@@ -52,4 +53,6 @@ export interface Deps {
   /** Fraction of validated routine answers sent to the pharmacist for audit (0..1). */
   auditRate: number;
   random: () => number;
+  /** Optional push for urgent review items (see notify.ts). */
+  notify?: Notifier | null;
 }
