@@ -15,12 +15,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      # The project is locked with bun.lock. `npm install` fails on a peer-dependency conflict
-      # (esbuild ^0.25 in package.json vs vite's ^0.27 || ^0.28), so install with bun and run the scripts with npm.
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.4
-      - run: bun install --frozen-lockfile
+      # package-lock.json is the lockfile for npm, CI and the container build. (bun.lock is kept for bun users.)
+      - run: npm ci --no-audit --no-fund
       - name: Type check
         run: npm run lint
       - name: Tests
@@ -31,3 +27,30 @@ jobs:
         run: npm run eval
       - name: Build
         run: npm run build
+
+  container:
+    # Proves the production image builds and starts. It is built and run on the runner only; nothing is pushed or deployed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t thp:ci .
+      - name: Start it and check the health endpoints
+        run: |
+          docker run -d --name thp -p 8080:8080 \
+            -e ALLOW_EPHEMERAL_DB=true -e DEMO_MODE=true \
+            -e SESSION_SECRET=ci-session-secret-ci-session-secret-00 \
+            -e PHARMACIST_PASSCODE=ci-pharmacist-passcode thp:ci
+          for i in $(seq 1 30); do
+            curl -fsS http://localhost:8080/readyz && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8080/healthz
+          curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          curl -fsSI http://localhost:8080/ | grep -i content-security-policy
+      - name: Refuses to run without database replication
+        run: |
+          ! docker run --rm -e NODE_ENV=production thp:ci
+      - name: Container logs
+        if: always()
+        run: docker logs thp || true

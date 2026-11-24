@@ -1,0 +1,21 @@
+# Never send these to the image build: secrets, local data, patient files, build output, native projects.
+.git
+.github
+.env
+.env.*
+!.env.example
+node_modules
+dist
+build
+coverage
+data
+*.db
+*.db-wal
+*.db-shm
+ios
+android
+docs
+tests
+scripts
+*.log
+.DS_Store

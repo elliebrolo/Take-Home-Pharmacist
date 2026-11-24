@@ -1,0 +1,72 @@
+# Cloud Run service definition (Knative YAML) for a STAGING demo with synthetic data.
+# Replace every PLACEHOLDER, then:   gcloud run services replace deploy/cloudrun.yaml --region REGION
+# Nothing here is applied automatically. See docs/deployment.md for the full, ordered steps.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: take-home-pharmacist
+  annotations:
+    # Who may CALL the service is set by IAM (roles/run.invoker), not here. A new service is private: only
+    # principals you grant can call it. Patients and the iOS app need allUsers, which is a deliberate, separate step
+    # in docs/deployment.md. Nothing in this file makes the service public.
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # ONE instance, always on. SQLite is a single-writer file database, and Litestream replicates from the
+        # instance that has it. More instances would each have their own database. Cost: one always-on instance.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "1"
+        # CPU is needed between requests for database replication and the daily label refresh.
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/startup-cpu-boost: "true"
+        # Cloud Storage volume mounts need the second-generation environment.
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: take-home-pharmacist@PROJECT_ID.iam.gserviceaccount.com
+      containerConcurrency: 40
+      timeoutSeconds: 300
+      containers:
+        - image: REGION-docker.pkg.dev/PROJECT_ID/take-home-pharmacist/app:TAG
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              # The container's disk is in memory; the database and temporary files count against this.
+              memory: 512Mi
+          env:
+            - { name: NODE_ENV, value: production }
+            # Staging with synthetic patients. Remove for anything that holds real people's data.
+            - { name: DEMO_MODE, value: "true" }
+            - { name: PUBLIC_BASE_URL, value: "https://SERVICE_URL_WITHOUT_TRAILING_SLASH" }
+            - { name: CORS_ORIGINS, value: "capacitor://localhost" }
+            - { name: LITESTREAM_REPLICA_URL, value: "gcs://DB_BUCKET/take-home-pharmacist" }
+            - { name: UPLOAD_DIR, value: /mnt/uploads }
+            - { name: LLM_PROVIDER, value: gemini }
+            - { name: GEMINI_MODEL, value: "SET_A_MODEL_YOUR_KEY_CAN_USE" }
+            - { name: LABEL_REFRESH_HOURS, value: "24" }
+            - { name: PATIENT_SESSION_HOURS, value: "24" }
+            # Secrets come from Secret Manager, never from this file.
+            - name: SESSION_SECRET
+              valueFrom: { secretKeyRef: { name: thp-session-secret, key: latest } }
+            - name: PHARMACIST_PASSCODE
+              valueFrom: { secretKeyRef: { name: thp-pharmacist-passcode, key: latest } }
+            - name: GEMINI_API_KEY
+              valueFrom: { secretKeyRef: { name: thp-gemini-api-key, key: latest } }
+          volumeMounts:
+            - { name: uploads, mountPath: /mnt/uploads }
+          startupProbe:
+            httpGet: { path: /readyz, port: 8080 }
+            periodSeconds: 3
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            periodSeconds: 30
+      volumes:
+        - name: uploads
+          csi:
+            driver: gcsfuse.run.googleapis.com
+            volumeAttributes:
+              bucketName: UPLOADS_BUCKET
