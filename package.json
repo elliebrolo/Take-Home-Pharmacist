@@ -11,6 +11,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "eval": "tsx --test tests/eval.test.ts",
     "nlm:fetch": "tsx scripts/nlm-fetch.ts"
   },
   "dependencies": {

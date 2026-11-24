@@ -28,8 +28,21 @@ const EMERGENCY_PHRASES = [
   'unconscious', 'unresponsive', 'coughing blood', 'vomiting blood', 'throwing up blood', 'blood in my vomit', 'black stool', 'tarry stool',
   'slurred speech', 'face drooping', 'sudden weakness', 'numbness in my arm', 'seizure', 'convulsion', 'stroke', 'blue lips',
   'suicidal', 'suicide', 'kill myself', 'end my life', 'want to die', 'overdose', 'overdosed', 'took too many', 'took too much',
-  'dolor en el pecho', 'dolor de pecho', 'no puedo respirar', 'douleur thoracique', 'douleur dans la poitrine', 'ne peux pas respirer',
-  '胸痛', '呼吸困难', '喘不过气',
+  // plain-language and indirect English
+  'chest hurts', 'pressure in my chest', 'pressure in the chest', 'catch my breath', 'get air', 'struggling to breathe', 'not able to breathe',
+  'unable to breathe', 'turning blue', 'lips are blue', 'whole bottle', 'entire bottle', 'hurt myself', 'harm myself', 'not want to be alive',
+  'dont want to live', "don't want to live", 'collapsed', 'not responding', "won't wake up", 'wont wake up', 'slurred', 'speech is slurred',
+  'face is drooping', 'drooping face',
+  // Spanish, French, German, Portuguese, Italian, Tagalog, Chinese. Developer-written; NOT checked by a clinician or native speaker.
+  'dolor en el pecho', 'dolor de pecho', 'no puedo respirar', 'me falta el aire', 'falta de aire', 'sobredosis', 'quiero morir', 'tome demasiadas',
+  'tomé demasiadas', 'me desmayé', 'me desmaye',
+  'douleur thoracique', 'douleur dans la poitrine', 'ne peux pas respirer', 'mal à la poitrine', 'mal a la poitrine', 'du mal à respirer',
+  'difficulté à respirer', 'je veux mourir', 'envie de mourir',
+  'brustschmerzen', 'keine luft', 'nicht atmen', 'atemnot', 'überdosis', 'ueberdosis', 'will sterben',
+  'dor no peito', 'não consigo respirar', 'nao consigo respirar', 'falta de ar', 'quero morrer',
+  'dolore al petto', 'dolore toracico', 'non riesco a respirare', 'mancanza di respiro', 'voglio morire',
+  'hirap huminga', 'nahihirapan huminga', 'nahihirapan akong huminga', 'masakit ang dibdib', 'sakit sa dibdib',
+  '胸痛', '胸口痛', '胸闷', '呼吸困难', '喘不过气', '吃多了药', '服药过量', '自杀', '不想活', '晕倒', '昏倒',
 ];
 const URGENT_PHRASES = [
   'dark urine', 'tea colored urine', 'tea-colored urine', 'blood in my urine', 'blood in urine', 'severe muscle pain', 'muscle weakness',
@@ -37,18 +50,35 @@ const URGENT_PHRASES = [
   'heart racing', 'palpitations', 'swollen legs', 'swelling in my legs', 'rash', 'hives', 'vomiting', "can't keep", 'cant keep', 'not urinating',
   'double dose', 'took two', 'took double', 'took an extra', 'wrong medicine', 'wrong medication', 'took someone else', 'blurred vision', 'blurry vision',
   'very low blood sugar', 'shaky and sweating', 'fainting', 'dizzy and', 'pregnant', 'pregnancy', 'breastfeeding', 'bleeding',
+  'heart is racing', 'heart is pounding', 'heart pounding', 'by mistake', 'by accident', 'accidentally', 'took all my pills',
 ];
 const PHARMACIST_PHRASES = [
   'stop taking', 'stop my', 'should i stop', 'quit taking', 'change my dose', 'increase my dose', 'decrease my dose', 'lower my dose', 'double my',
   'skip my', 'skip a dose', 'can i stop', 'switch to', 'new prescription', 'ran out', 'run out', 'side effect is', 'not working', 'stopped working',
 ];
-const NEGATORS = new Set(['no', 'not', 'never', 'without', 'denies', 'deny', "don't", 'dont', "doesn't", "didn't", "haven't", "hasn't", 'zero', 'nothing', 'free', 'none']);
+const NEGATORS = new Set(['no', 'not', 'never', 'without', 'denies', 'deny', "don't", 'dont', "doesn't", "didn't", "haven't", "hasn't", 'zero', 'nothing', 'free', 'none',
+  // other languages (a negator inside a phrase, like "no puedo respirar", is part of the phrase and is not affected)
+  'pas', 'sans', 'sin', 'nunca', 'jamais', 'kein', 'keine', 'ohne', 'nie', 'niemals', 'não', 'nao', 'senza', 'mai']);
+// A negation reaches the end of its clause only: "no appetite AND chest pain" still reports chest pain.
+const CLAUSE_BREAK = /[.,;:!?\n\u2014\u2013()]|\b(and|but|however|although|though|yet|y|pero|et|mais|und|aber|ma|mas)\b/giu;
 
 function words(s: string): string[] {
   return s.toLowerCase().normalize('NFKC').replace(/[’‘]/g, "'").split(/[^\p{L}\p{N}']+/u).filter(Boolean);
 }
+/** Like words(), with a '|' token wherever a clause ends, so a negation cannot reach into the next clause. */
+function clauseWords(s: string): string[] {
+  const marked = s.toLowerCase().normalize('NFKC').replace(/[’‘]/g, "'").replace(CLAUSE_BREAK, ' | ');
+  return marked.split(/[^\p{L}\p{N}'|]+/u).filter(Boolean).flatMap((w) => (w.includes('|') ? w.split('|').flatMap((x, i, arr) => (i < arr.length - 1 ? [x, '|'] : [x])).filter(Boolean) : [w]));
+}
+const isSwap = (a: string, b: string) => {
+  if (a.length !== b.length) return false;
+  let i = 0;
+  while (i < a.length && a[i] === b[i]) i++;
+  return i < a.length - 1 && a[i] === b[i + 1] && a[i + 1] === b[i] && a.slice(i + 2) === b.slice(i + 2);
+};
 function within1(a: string, b: string): boolean {
   if (a === b) return true;
+  if (a.length >= 4 && isSwap(a, b)) return true; // "pian" for "pain"
   if (a.length < 5 || b.length < 5 || Math.abs(a.length - b.length) > 1) return false;
   // Levenshtein distance <= 1
   let i = 0, j = 0, edits = 0;
@@ -62,7 +92,7 @@ function within1(a: string, b: string): boolean {
 
 interface Hit { phrase: string; negated: boolean }
 function findPhrases(message: string, phrases: string[]): Hit[] {
-  const msg = words(message);
+  const msg = clauseWords(message);
   const raw = message.toLowerCase();
   const hits: Hit[] = [];
   for (const phrase of phrases) {
@@ -74,8 +104,12 @@ function findPhrases(message: string, phrases: string[]): Hit[] {
     const pw = words(phrase);
     for (let i = 0; i + pw.length <= msg.length; i++) {
       if (pw.every((w, k) => within1(msg[i + k], w))) {
-        const before = msg.slice(Math.max(0, i - 3), i);
-        hits.push({ phrase, negated: before.some((w) => NEGATORS.has(w)) });
+        let before = msg.slice(Math.max(0, i - 3), i);
+        // "no chest pain or shortness of breath": a negation also covers a symptom listed with "or".
+        // Only when the phrase directly follows "or"/"nor", so "no energy or I have chest pain" is not covered.
+        if (i >= 1 && (msg[i - 1] === 'or' || msg[i - 1] === 'nor')) before = msg.slice(Math.max(0, i - 6), i - 1);
+        const clause = before.slice(before.lastIndexOf('|') + 1);
+        hits.push({ phrase, negated: clause.some((w) => NEGATORS.has(w)) });
         break;
       }
     }
